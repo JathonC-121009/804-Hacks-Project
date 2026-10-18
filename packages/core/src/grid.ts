@@ -23,13 +23,27 @@ import {
 
 /**
  * EIA fuel-type codes seen in the hourly feed, mapped to our factor keys.
- * [VERIFY] against a real API response before the pitch: codes in the docs and
- * codes in the payload have not been confirmed to match.
+ *
+ * Checked on 2026-10-18 against documentation only; no live call has been made
+ * (no API key). The eight legacy EIA-930 codes below - COL, NG, OIL, NUC, WND,
+ * SUN, WAT, OTH - are the ones third-party clients of this exact route show in
+ * their example rows. They are NOT confirmed against a real response.
+ *
+ * Still open, and the reason scripts/fetch_grid.ts prints every code it saw:
+ * EIA-930 gained new energy-source categories in 2025 (battery storage,
+ * geothermal, pumped storage split out from hydro, wind and solar with and
+ * without integrated storage, other and unknown storage). Their API codes are
+ * not documented anywhere reachable without a key, so they are deliberately
+ * NOT guessed here. Any code missing from this map lands in the wide "OTH"
+ * band, which quietly widens every number downstream - so a run that reports
+ * unrecognised codes means this map needs updating before any figure from it
+ * is shown to anyone.
  */
 const FUEL_CODE_MAP: Record<string, string> = {
   COL: "COL",
   NG: "NG",
   OIL: "OIL",
+  // Not an EIA code we have seen; kept as a defensive alias for petroleum.
   PET: "OIL",
   NUC: "NUC",
   WND: "WND",
