@@ -16,7 +16,7 @@ Full scope, sources and open decisions: [`docs/output-waste-optimizer-plan.md`](
 
 ## Run it
 
-Needs **Node 22.13+** and nothing else. No install, no build step.
+The portal needs **Node 22.13+** and nothing else. No install or build step is required for the portal.
 
 ```bash
 npm run dev
@@ -30,7 +30,8 @@ Then open <http://127.0.0.1:5173/>.
 | `npm test` | 103 tests, including the acceptance criteria from the plan |
 | `npm run seed` | Regenerates the demo data in `data/` (run it the morning of the event so dates look current) |
 | `npm run grid` | Fetches real PJM grid data — needs `EIA_API_KEY` |
-| `npm run typecheck` | Full type check. The **only** command that needs `npm install` |
+| `npm run typecheck` | Full type check — needs `npm install` |
+| `npm run build:ext` | Builds the browser extension into `extension/dist/` — needs `npm install` |
 
 ### Why there's no build step
 
@@ -54,7 +55,9 @@ Demo core (D1–D9 in the plan) — all working, all tested:
 | D8 | Grid feed with cache and labelled fallback |
 | D9 | Weekly efficiency card |
 
-**Not built, by choice:** browser extension (Tier 2), CLI log reader (Tier 2), leaderboard (Tier 3), carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
+The browser extension is also built. It has dedicated support for ChatGPT, Claude, Gemini, Perplexity, Microsoft Copilot, Grok, Poe, DeepSeek, Mistral Le Chat, Meta AI, and You.com. For another browser-based AI tool, open its chat page and choose **Enable on this AI site** in the extension popup; access is requested only for that site.
+
+**Not built, by choice:** CLI log reader (Tier 2), leaderboard (Tier 3), and carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
 
 ---
 

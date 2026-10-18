@@ -21,7 +21,7 @@
     "@types/node": "^22.10.2",
     "typescript": "^5.9.3"
   },
-  "comment": "No RUNTIME or BUILD dependencies on purpose. Node 22 strips TypeScript types, so `npm test`, `npm run seed`, `npm run grid` and `npm run dev` all work with nothing installed - clone and go. The two devDependencies are only for `npm run typecheck`; skip `npm install` entirely if you do not want it.",
+  "comment": "No portal runtime dependencies on purpose. Node 22 strips TypeScript types, so `npm test`, `npm run seed`, `npm run grid` and `npm run dev` work without installing packages. Typechecking and the extension build need `npm install`.",
   "dependencies": {
     "@types/chrome": "^0.0.287"
   }

@@ -339,15 +339,26 @@ function scanReplies(): void {
   if (!config) return;
   const messages = pickAll<HTMLElement>(document, site.assistantMessage);
   const prompts = pickAll<HTMLElement>(document, site.userMessage);
-  const lastPrompt = prompts[prompts.length - 1]?.innerText ?? "";
 
   for (const msg of messages) {
     if (seen.has(msg)) continue;
     const text = msg.innerText?.trim() ?? "";
     if (text.length < 40) continue;
     seen.add(msg);
-    attachReceipt(msg, text, lastPrompt);
+    attachReceipt(msg, text, promptBefore(msg, prompts));
   }
+}
+
+/** Pair each answer with the nearest user message before it in document order. */
+function promptBefore(message: Element, prompts: HTMLElement[]): string {
+  let nearest = "";
+  for (const prompt of prompts) {
+    const relation = prompt.compareDocumentPosition(message);
+    if ((relation & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
+      nearest = prompt.innerText ?? "";
+    }
+  }
+  return nearest;
 }
 
 function attachReceipt(msg: HTMLElement, response: string, prompt: string): void {

@@ -1,6 +1,22 @@
 // Plain JS on purpose: the popup stays usable without a second build target.
 const $ = (id) => document.getElementById(id);
 
+const BUILT_IN_HOSTS = [
+  "chatgpt.com",
+  "chat.openai.com",
+  "claude.ai",
+  "gemini.google.com",
+  "perplexity.ai",
+  "copilot.microsoft.com",
+  "grok.com",
+  "x.com",
+  "poe.com",
+  "chat.deepseek.com",
+  "chat.mistral.ai",
+  "meta.ai",
+  "you.com",
+];
+
 const zeroRange = (unit) => ({ low: 0, high: 0, unit });
 
 function sig(n) {
@@ -123,6 +139,97 @@ $("auto").addEventListener("change", (e) => {
   chrome.storage.local.set({ autoDirections: e.target.checked });
 });
 
+function isBuiltInHost(hostname) {
+  return BUILT_IN_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+}
+
+function scriptIdFor(hostname) {
+  return `owo-${hostname.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 80)}`;
+}
+
+function setSiteStatus(message, state = "") {
+  $("site-status").textContent = message;
+  $("site-status").dataset.state = state;
+}
+
+async function activeWebTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id || !tab.url) return null;
+  try {
+    const url = new URL(tab.url);
+    if (url.protocol !== "https:") return null;
+    return { id: tab.id, url };
+  } catch {
+    return null;
+  }
+}
+
+async function refreshSiteControl() {
+  const tab = await activeWebTab();
+  if (!tab) {
+    $("enable-site").disabled = true;
+    setSiteStatus("Open an HTTPS AI chat page to enable it.");
+    return;
+  }
+  if (isBuiltInHost(tab.url.hostname)) {
+    $("enable-site").disabled = true;
+    $("enable-site").textContent = "Enabled automatically";
+    setSiteStatus("This AI tool has dedicated support.", "ok");
+    return;
+  }
+
+  const originPattern = `${tab.url.origin}/*`;
+  const allowed = await chrome.permissions.contains({ origins: [originPattern] });
+  if (allowed) {
+    $("enable-site").textContent = "Enabled on this site";
+    setSiteStatus("Generic chat detection is active for this site.", "ok");
+  }
+}
+
+$("enable-site").addEventListener("click", async () => {
+  const button = $("enable-site");
+  button.disabled = true;
+  setSiteStatus("Waiting for site permission…");
+
+  try {
+    const tab = await activeWebTab();
+    if (!tab) throw new Error("Open an HTTPS AI chat page first.");
+    if (isBuiltInHost(tab.url.hostname)) {
+      button.textContent = "Enabled automatically";
+      setSiteStatus("This AI tool has dedicated support.", "ok");
+      return;
+    }
+
+    const originPattern = `${tab.url.origin}/*`;
+    const granted = await chrome.permissions.request({ origins: [originPattern] });
+    if (!granted) throw new Error("Site access was not granted.");
+
+    const id = scriptIdFor(tab.url.hostname);
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
+    if (existing.length === 0) {
+      await chrome.scripting.registerContentScripts([
+        {
+          id,
+          matches: [originPattern],
+          js: ["loader.js"],
+          css: ["overlay.css"],
+          runAt: "document_idle",
+          persistAcrossSessions: true,
+        },
+      ]);
+    }
+
+    await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["overlay.css"] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["loader.js"] });
+    button.textContent = "Enabled on this site";
+    setSiteStatus("Generic chat detection is active. Refresh if the page was already open for a while.", "ok");
+  } catch (error) {
+    button.disabled = false;
+    setSiteStatus(error instanceof Error ? error.message : "Could not enable this site.", "error");
+  }
+});
+
 $("reset").addEventListener("click", () => {
   chrome.storage.local.set(
     {
@@ -135,3 +242,5 @@ $("reset").addEventListener("click", () => {
     () => location.reload(),
   );
 });
+
+void refreshSiteControl();

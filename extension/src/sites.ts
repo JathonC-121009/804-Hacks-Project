@@ -75,6 +75,170 @@ const CLAUDE: SiteConfig = {
   defaultModelClass: "large",
 };
 
+const GEMINI: SiteConfig = {
+  id: "gemini",
+  label: "Google Gemini",
+  hosts: ["gemini.google.com"],
+  composer: [
+    "rich-textarea div[contenteditable='true']",
+    ".ql-editor[contenteditable='true']",
+    "div[contenteditable='true'][role='textbox']",
+    "textarea",
+  ],
+  conversationRoot: ["main", "chat-window", "body"],
+  assistantMessage: [
+    "model-response .markdown",
+    "model-response message-content",
+    "model-response",
+    "[data-test-id='model-response']",
+  ],
+  userMessage: ["user-query", ".user-query", "[data-test-id='user-query']"],
+  defaultModelClass: "large",
+};
+
+const PERPLEXITY: SiteConfig = {
+  id: "perplexity",
+  label: "Perplexity",
+  hosts: ["perplexity.ai"],
+  composer: [
+    "textarea[placeholder]",
+    "div[contenteditable='true'][role='textbox']",
+    "div[contenteditable='true']",
+  ],
+  conversationRoot: ["main", "[role='main']", "body"],
+  assistantMessage: [
+    "[data-testid='answer']",
+    "[data-testid='copilot-answer']",
+    "[data-message-author-role='assistant']",
+    ".prose",
+  ],
+  userMessage: ["[data-testid='query']", "[data-message-author-role='user']"],
+  defaultModelClass: "large",
+};
+
+const COPILOT: SiteConfig = {
+  id: "copilot",
+  label: "Microsoft Copilot",
+  hosts: ["copilot.microsoft.com"],
+  composer: [
+    "textarea",
+    "div[contenteditable='true'][role='textbox']",
+    "cib-text-input textarea",
+  ],
+  conversationRoot: ["main", "cib-serp", "body"],
+  assistantMessage: [
+    "[data-content='ai-message']",
+    "[data-testid='ai-message']",
+    "[data-message-author-role='assistant']",
+    "cib-message-group[source='bot'] cib-message",
+  ],
+  userMessage: [
+    "[data-content='user-message']",
+    "[data-testid='user-message']",
+    "[data-message-author-role='user']",
+    "cib-message-group[source='user'] cib-message",
+  ],
+  defaultModelClass: "large",
+};
+
+const GROK: SiteConfig = {
+  id: "grok",
+  label: "Grok",
+  hosts: ["grok.com", "x.com"],
+  composer: [
+    "textarea",
+    "div[contenteditable='true'][role='textbox']",
+    "div[contenteditable='true']",
+  ],
+  conversationRoot: ["main", "[role='main']", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[data-testid='assistant-message']",
+    "[data-testid='message-bubble'][data-author='assistant']",
+  ],
+  userMessage: [
+    "[data-message-author-role='user']",
+    "[data-testid='user-message']",
+    "[data-testid='message-bubble'][data-author='user']",
+  ],
+  defaultModelClass: "large",
+};
+
+const POE: SiteConfig = {
+  id: "poe",
+  label: "Poe",
+  hosts: ["poe.com"],
+  composer: ["textarea", "div[contenteditable='true'][role='textbox']"],
+  conversationRoot: ["main", "[class*='ChatMessagesView']", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[class*='Message_botMessage']",
+    "[class*='BotMessage']",
+  ],
+  userMessage: ["[data-message-author-role='user']", "[class*='Message_humanMessage']"],
+  defaultModelClass: "large",
+};
+
+const DEEPSEEK: SiteConfig = {
+  id: "deepseek",
+  label: "DeepSeek",
+  hosts: ["chat.deepseek.com"],
+  composer: ["textarea", "div[contenteditable='true'][role='textbox']"],
+  conversationRoot: ["main", "#root", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[data-testid='assistant-message']",
+    ".ds-markdown",
+  ],
+  userMessage: ["[data-message-author-role='user']", "[data-testid='user-message']"],
+  defaultModelClass: "large",
+};
+
+const MISTRAL: SiteConfig = {
+  id: "mistral",
+  label: "Mistral Le Chat",
+  hosts: ["chat.mistral.ai"],
+  composer: ["textarea", "div[contenteditable='true'][role='textbox']"],
+  conversationRoot: ["main", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[data-testid='assistant-message']",
+    "article .prose",
+  ],
+  userMessage: ["[data-message-author-role='user']", "[data-testid='user-message']"],
+  defaultModelClass: "large",
+};
+
+const META_AI: SiteConfig = {
+  id: "meta-ai",
+  label: "Meta AI",
+  hosts: ["meta.ai"],
+  composer: ["textarea", "div[contenteditable='true'][role='textbox']"],
+  conversationRoot: ["main", "[role='main']", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[data-testid='assistant-message']",
+    "[role='article'][data-author='assistant']",
+  ],
+  userMessage: ["[data-message-author-role='user']", "[data-testid='user-message']"],
+  defaultModelClass: "large",
+};
+
+const YOU_COM: SiteConfig = {
+  id: "you-com",
+  label: "You.com",
+  hosts: ["you.com"],
+  composer: ["textarea", "div[contenteditable='true'][role='textbox']"],
+  conversationRoot: ["main", "[role='main']", "body"],
+  assistantMessage: [
+    "[data-message-author-role='assistant']",
+    "[data-testid='assistant-message']",
+    "[data-testid='youchat-answer']",
+  ],
+  userMessage: ["[data-message-author-role='user']", "[data-testid='user-message']"],
+  defaultModelClass: "large",
+};
+
 /** The local mock page, so the demo never depends on a third party. */
 const MOCK: SiteConfig = {
   id: "mock",
@@ -108,7 +272,20 @@ const GENERIC: SiteConfig = {
   defaultModelClass: "large",
 };
 
-const SITES: SiteConfig[] = [CHATGPT, CLAUDE, MOCK];
+const SITES: SiteConfig[] = [
+  CHATGPT,
+  CLAUDE,
+  GEMINI,
+  PERPLEXITY,
+  COPILOT,
+  GROK,
+  POE,
+  DEEPSEEK,
+  MISTRAL,
+  META_AI,
+  YOU_COM,
+  MOCK,
+];
 
 export function siteFor(hostname: string): SiteConfig {
   const host = hostname.toLowerCase();
