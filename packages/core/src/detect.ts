@@ -111,20 +111,35 @@ const FILLER_OPENERS: RegExp[] = [
   /^thanks? (?:for|you for) (?:asking|the question|your question)\b/i,
   /^let'?s (?:dive in|get started|dive right in|jump in)\b/i,
   /^(?:ah|oh|well),?\s/i,
+  // Added after watching current models: the stock phrases have moved on from
+  // "Great question!" without getting any more informative.
+  /^(?:no worries|no problem|sure thing|my pleasure)\b/i,
+  /^(?:haha|lol|oh no|uh oh|whoops|oops)\b/i,
+  /^(?:nice|cool|awesome|perfect|love it|good call)[!,]/i,
+  /^i'?d be (?:glad|delighted) to\b/i,
 ];
 
 const FILLER_CLOSERS: RegExp[] = [
   /\bi hope (?:this|that|these) helps?\b/i,
-  /\bhope (?:this|that) helps?\b/i,
-  /\blet me know if you\b/i,
-  /\bjust let me know\b/i,
+  /\bhope (?:this|that) (?:was )?(?:helps?|helpful)\b/i,
+  /\blet me know\b/i,
   /\bfeel free to (?:ask|reach out|let me know)\b/i,
   /\bdon'?t hesitate to\b/i,
-  /\bwould you like me to\b/i,
+  /\bwould you like\b/i,
   /\bif you (?:have|'ve got) any (?:other|further|more)?\s*questions\b/i,
   /\bhappy to (?:help|clarify|elaborate|expand|go deeper)\b/i,
-  /\banything else (?:i can|you'?d like|you need)\b/i,
+  /\banything else\b/i,
   /\bgood luck\b/i,
+  // Current phrasing. These are offers to keep talking, not answers, and they
+  // are only ever read in the last two sentences of a short closing line, so
+  // broadening them does not reach into the body of an answer.
+  /\b(?:i'?m|i am|we'?re|we are) here to help\b/i,
+  /\bwant me to\b/i,
+  /\bshall i\b/i,
+  /\b(?:want|wanna|care) to (?:try|give)\b.{0,24}\bagain\b/i,
+  /\bdoes that (?:help|make sense)\b/i,
+  /\bgive it (?:a|another) (?:go|try)\b/i,
+  /\bif you(?:'d| would) like,? i can\b/i,
 ];
 
 /** Filler sentences are short. A long sentence that trips a pattern is usually real content. */

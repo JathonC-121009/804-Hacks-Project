@@ -67,6 +67,35 @@ test("D1: every flag carries a usable span, except whole-response advisories", (
   }
 });
 
+test("current-model closing lines are caught, not just the 2023 ones", () => {
+  // Real replies from ChatGPT, Oct 2026. The original phrase list was built
+  // around "I hope this helps!" and scored both of these a perfect 100%, which
+  // is how a waste detector quietly becomes a decoration.
+  const keyboard = analyze(
+    "Looks like your keyboard may have gone a little wild.\n\nWant to try sending that again? I am here to help!",
+    "asdfgh qwerty",
+  );
+  assert.ok(keyboard.efficiency < 1, "a reply that is half closing offer is not 100% efficient");
+  assert.ok(keyboard.flags.some((f) => f.type === "filler" && f.confidence === "high"));
+
+  const closer = analyze(
+    "Closed-loop recirculates the same fluid around a sealed circuit. Let me know if you want me to go deeper!",
+    "How does closed loop cooling work?",
+  );
+  assert.ok(closer.flags.some((f) => f.type === "filler"), "\"let me know\" is a closing offer");
+});
+
+test("a clarifying question in the answer is still content, not filler", () => {
+  // The guard for the rule above: broadening the closing-offer patterns must
+  // not start charging people for a question that genuinely needs answering.
+  const r = analyze(
+    "That depends on your climate and your power source. Which of the two are you optimising for?",
+    "Should we use closed-loop cooling?",
+  );
+  assert.equal(r.flags.filter((f) => f.confidence === "high").length, 0, "no scored flags here");
+  assert.equal(r.efficiency, 1);
+});
+
 test("clean fixtures produce no scored flags at all", () => {
   for (const f of FIXTURES.filter((x) => x.expectHigh.length === 0)) {
     const { flags } = detect(f.response, f.prompt);
