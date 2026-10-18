@@ -7,6 +7,11 @@
   z-index: 2147483000;
   display: flex;
   align-items: center;
+  /* Wrap rather than run off the screen: the bar sits over someone else's
+     page, at whatever width their composer happens to be. */
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
   gap: 8px;
   padding: 7px 9px;
   border-radius: 10px;
@@ -32,6 +37,7 @@
 }
 
 .owo-btn {
+  flex: none;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -45,6 +51,11 @@
 .owo-btn:hover { filter: brightness(1.1); }
 
 .owo-pill {
+  /* A long sentence truncates instead of pushing the row wider. The full text
+     stays available in the title attribute. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 3px 9px;
   border-radius: 999px;
   background: #1b3a31;

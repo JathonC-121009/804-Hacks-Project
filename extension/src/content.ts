@@ -35,6 +35,7 @@ import {
   pushUsageEvent,
   refreshLeaderboardRow,
   adviseOnPrompt,
+  classifyModelName,
   rewritePrompt,
   stableHash,
   suggestModel,
@@ -174,6 +175,20 @@ async function boot(): Promise<void> {
  * Site markup changes without warning; this turns "the extension is broken"
  * into "this one selector stopped matching", which is a two-minute fix.
  */
+/**
+ * Which model the page says is selected.
+ *
+ * Read-only, and allowed to fail: when the picker is not found or its label is
+ * something like "Fast", the suggestion falls back to naming the site's own
+ * default. Guessing a model from a label we do not recognise would be worse
+ * than saying nothing.
+ */
+function readCurrentModel(): string | null {
+  const { el } = pick<HTMLElement>(document, site.modelIndicator ?? []);
+  const text = (el?.innerText ?? el?.getAttribute("aria-label") ?? "").trim();
+  return text && text.length <= 40 ? text.split("\n")[0]!.trim() : null;
+}
+
 function installProbe(): void {
   (window as unknown as { __owoProbe: () => void }).__owoProbe = () => {
     const report = (name: string, sels: string[]) => {
@@ -288,8 +303,10 @@ function evaluateDraft(composer: Element): void {
   }
 
   const advice = adviseOnPrompt(draft);
+  const detected = readCurrentModel();
   showNudge(composer, {
     canRewrite,
+    detectedModel: detected,
     advice: advice[0] ? `${advice[0].why} ${advice[0].suggestion}` : "",
     tokenDelta: rewrite.tokenDelta,
     removedCount: rewrite.removed.length,
@@ -301,6 +318,8 @@ function evaluateDraft(composer: Element): void {
 
 interface NudgeData {
   canRewrite: boolean;
+  /** The model name shown on the page, when it could be read. */
+  detectedModel: string | null;
   /** The single most useful thing to change about the request itself. */
   advice: string;
   tokenDelta: number;
@@ -340,16 +359,25 @@ function showNudge(composer: Element, data: NudgeData): void {
     bits.push(`<span class="owo-pill" title="${escapeHtml(data.advice)}">${escapeHtml(short)}</span>`);
   }
   if (data.suggestion.isDowngrade) {
-    // Name the model for the site the user is on, falling back to Claude's line.
+    // Recommend for the site in front of the user, not a generic tier.
     const mine =
       data.suggestion.recommendations.find((r) => r.platformId === site.id) ??
       data.suggestion.recommendations.find((r) => r.platformId === "claude");
-    const named = mine ? `${mine.model} at ${mine.effort} effort` : `a ${data.suggestion.suggestedTier} model`;
-    bits.push(
-      `<span class="owo-pill" title="${escapeHtml(data.suggestion.caveats.join(" "))}">${escapeHtml(
-        named,
-      )} likely enough &middot; ${data.suggestion.confidence} confidence</span>`,
-    );
+    const current =
+      data.detectedModel && config ? classifyModelName(data.detectedModel, config) : null;
+    const order = ["small", "medium", "large"];
+    // Already on something at or below what we would suggest: saying "switch"
+    // to the model they are using is the fastest way to lose their trust.
+    const worthSaying =
+      !current || order.indexOf(current.tier) > order.indexOf(data.suggestion.suggestedTier);
+    if (mine && worthSaying) {
+      const prefix = data.detectedModel ? `On ${data.detectedModel}: ` : "";
+      bits.push(
+        `<span class="owo-pill" title="${escapeHtml(data.suggestion.caveats.join(" "))}">${escapeHtml(
+          `${prefix}${mine.model} at ${mine.effort} effort is likely enough`,
+        )}</span>`,
+      );
+    }
   }
 
   const undoBit = pendingUndo
@@ -426,10 +454,26 @@ function showAutoNote(composer: Element, added: string, original: string): void 
 
 function position(box: HTMLElement, anchor: Element): void {
   const r = anchor.getBoundingClientRect();
+  const margin = 12;
   box.style.position = "fixed";
-  box.style.left = `${Math.max(12, r.left)}px`;
-  box.style.top = `${Math.max(12, r.top - 46)}px`;
-  box.style.maxWidth = `${Math.max(280, r.width)}px`;
+  box.style.left = `${Math.max(margin, r.left)}px`;
+  box.style.top = `${Math.max(margin, r.top - 46)}px`;
+  box.style.maxWidth = `${Math.min(Math.max(280, r.width), window.innerWidth - margin * 2)}px`;
+
+  // Measure after layout and pull it back on screen. A composer near the right
+  // edge, or one wider than the window, otherwise puts half the bar outside it.
+  requestAnimationFrame(() => {
+    const box_ = box.getBoundingClientRect();
+    if (box_.right > window.innerWidth - margin) {
+      box.style.left = `${Math.max(margin, window.innerWidth - box_.width - margin)}px`;
+    }
+    const top = Number.parseFloat(box.style.top);
+    if (box_.height > 46 && top === Math.max(margin, r.top - 46)) {
+      // A wrapped bar is taller than the gap reserved for it, so it would sit
+      // on top of the composer. Lift it by its real height.
+      box.style.top = `${Math.max(margin, r.top - box_.height - 8)}px`;
+    }
+  });
 }
 
 function removeNudge(): void {

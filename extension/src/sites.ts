@@ -35,6 +35,11 @@ export interface SiteConfig {
   userMessage: string[];
   /** Model-class guess for this site when the user has not set one. */
   defaultModelClass: "small" | "medium" | "large";
+  /**
+   * Where the page shows which model is selected. Read-only: the extension
+   * never changes it. Best-effort, and absent on sites that show no picker.
+   */
+  modelIndicator?: string[];
 }
 
 /**
@@ -78,6 +83,11 @@ const CHATGPT: SiteConfig = {
     "[class*='user-message']",
     ".text-size-chat.whitespace-pre-wrap",
   ],
+  modelIndicator: [
+    "[data-testid='model-switcher-dropdown-button']",
+    "button[aria-label*='Model' i]",
+    "button[data-testid*='model' i]",
+  ],
   defaultModelClass: "large",
 };
 
@@ -97,6 +107,11 @@ const CLAUDE: SiteConfig = {
     "div[data-is-streaming='false']",
   ],
   userMessage: ["[data-testid='user-message']", "div.font-user-message"],
+  modelIndicator: [
+    "[data-testid='model-selector-dropdown']",
+    "button[aria-haspopup='listbox']",
+    "button[aria-label*='model' i]",
+  ],
   defaultModelClass: "large",
 };
 
@@ -118,6 +133,11 @@ const GEMINI: SiteConfig = {
     "[data-test-id='model-response']",
   ],
   userMessage: ["user-query", ".user-query", "[data-test-id='user-query']"],
+  modelIndicator: [
+    "bard-mode-switcher button",
+    "button[aria-label*='model' i]",
+    "[data-test-id='bard-mode-menu-button']",
+  ],
   defaultModelClass: "large",
 };
 
@@ -294,6 +314,10 @@ const GENERIC: SiteConfig = {
     "[class*='message']:not([class*='user'])",
   ],
   userMessage: ["[data-message-author-role='user']", "[class*='user-message']"],
+  modelIndicator: [
+    "button[aria-label*='model' i]",
+    "[data-testid*='model-select' i]",
+  ],
   defaultModelClass: "large",
 };
 

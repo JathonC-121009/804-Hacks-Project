@@ -153,6 +153,46 @@ export function suggestModel(
   };
 }
 
+/** Letters and digits only, so "GPT-6 Luna" and "gpt-6-luna" compare equal. */
+function squash(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Work out which tier a model name belongs to, from config alone.
+ *
+ * Matches the configured model ids first, then the human names in each tier's
+ * examples, so a picker reading "Claude Haiku 5.5" lands on the same tier as
+ * the id "claude-haiku-5-5". Returns null rather than guessing: an unknown
+ * name means the site renamed something, and inventing a tier would produce a
+ * confident, wrong recommendation.
+ */
+export function classifyModelName(
+  name: string,
+  config: Config,
+): { platformId: string; tier: ModelClass } | null {
+  const needle = squash(name);
+  if (needle.length < 3) return null;
+  for (const platform of config.models.platforms) {
+    for (const tier of ["large", "medium", "small"] as ModelClass[]) {
+      const id = squash(platform.tiers[tier].model);
+      if (id.length < 3) continue;
+      // Both directions: a picker may show the full id ("claude-opus-5-5") or
+      // just the part people say out loud ("Opus 5.5").
+      if (needle.includes(id) || (needle.length >= 5 && id.includes(needle))) {
+        return { platformId: platform.id, tier };
+      }
+    }
+  }
+  for (const tier of config.models.tiers) {
+    for (const example of tier.examples) {
+      const ex = squash(example);
+      if (ex.length >= 3 && needle.includes(ex)) return { platformId: "", tier: tier.id };
+    }
+  }
+  return null;
+}
+
 /** Same suggestion, plus the saving for one known response length. */
 export function footprintDeltaForResponse(
   suggestion: ModelSuggestion,

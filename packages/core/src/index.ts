@@ -37,7 +37,7 @@ export {
 export { energyDeltaPer1kOutput, estimate } from "./estimate.ts";
 export { buildInstructionBlock, INSTRUCTION_CAVEATS } from "./instructions.ts";
 export { detectTaskType, REWRITE_CAVEATS, rewritePrompt, type RewriteOptions } from "./rewrite.ts";
-export { footprintDeltaForResponse, suggestModel } from "./suggestModel.ts";
+export { classifyModelName, footprintDeltaForResponse, recommendationsFor, suggestModel } from "./suggestModel.ts";
 export {
   exampleSetHash,
   GATE_DEFAULTS,
