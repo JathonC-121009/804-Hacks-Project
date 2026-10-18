@@ -418,6 +418,53 @@ function collapseSynonyms(text: string): { text: string; removed: Removal[] } {
   return { text: next, removed };
 }
 
+/** "hey i want ..." - a greeting glued to the front of a real sentence. */
+const GREETING_PREFIX = /^(?:hey|hi|hello|yo|good\s+(?:morning|afternoon|evening))\b[\s,!.]*/i;
+
+/**
+ * A wish rewritten as an instruction. "I want to learn about X" and
+ * "Explain X" ask for the same thing; the second is shorter and tells the
+ * model what to produce rather than how the person feels.
+ */
+const WISHES: { re: RegExp; to: string }[] = [
+  { re: /^i(?:'| a)?m (?:really |very )?interested in (?:learning about )?/i, to: "Explain " },
+  { re: /^i (?:just )?(?:want|would like|need|'d like) to (?:learn|know|understand)(?: about| more about)?\s+/i, to: "Explain " },
+  { re: /^i (?:just )?(?:want|would like|need|'d like) (?:you )?to\s+/i, to: "" },
+  { re: /^(?:can you |could you )?(?:please )?(?:help me understand|teach me(?: about)?|tell me(?: about)?)\s+/i, to: "Explain " },
+];
+
+/**
+ * Drop a "because ..." clause that only restates what the prompt already says.
+ *
+ * Motivation is not an instruction, but it is only safe to remove when it adds
+ * no words of its own: "because I am interested in closed loop cooling" after
+ * "learn about closed loop cooling" is a restatement, while "because I want to
+ * know how it fails" introduces a real requirement and is kept.
+ */
+const MOTIVE = /^\s*i\s*(?:'m|am| have| need| want| would| 'd)?\b/i;
+// Half is enough BECAUSE the clause must also read as a statement of wanting.
+// A clause that adds a real requirement ("because I need it for a demo
+// tomorrow") shares almost nothing with the request and stays well under this.
+const COVERED_SHARE = 0.5;
+
+function dropRestatedMotives(text: string): { text: string; removed: Removal[] } {
+  const parts = text.split(/\s+because\s+/i);
+  if (parts.length < 2) return { text, removed: [] };
+  const removed: Removal[] = [];
+  const kept = [parts[0]!];
+  for (const clause of parts.slice(1)) {
+    const seen = new Set(words(kept.join(" ")));
+    const content = words(clause).filter((w) => w.length > 3);
+    const covered = content.length > 0 && content.filter((w) => seen.has(w)).length / content.length >= COVERED_SHARE;
+    if (MOTIVE.test(clause) && covered) {
+      removed.push({ text: `because ${clause.trim()}`, why: "Restates what you already asked for." });
+      continue;
+    }
+    kept.push(clause);
+  }
+  return { text: kept.join(" because "), removed };
+}
+
 const DUPLICATE_JACCARD = 0.8;
 /** Floor for FUZZY matching only: short list items legitimately share wording. */
 const DUPLICATE_MIN_WORDS = 6;
@@ -524,6 +571,24 @@ export function rewritePrompt(
     // let a stray "please" hide a repeat.
     let text = s.text;
     const politenessRemovals: Removal[] = [];
+    const greeting = text.match(GREETING_PREFIX);
+    if (greeting) {
+      politenessRemovals.push({ text: greeting[0].trim(), why: "Greeting. Costs tokens, changes nothing." });
+      text = text.replace(GREETING_PREFIX, "");
+    }
+
+    for (const wish of WISHES) {
+      if (!wish.re.test(text)) continue;
+      const before = text;
+      text = text.replace(wish.re, wish.to);
+      politenessRemovals.push({ text: before.trim(), why: "Says what you want rather than what the model should do." });
+      break;
+    }
+
+    const motives = dropRestatedMotives(text);
+    text = motives.text;
+    politenessRemovals.push(...motives.removed);
+
     const definitions = stripDefinitions(text, prompt);
     text = definitions.text;
     politenessRemovals.push(...definitions.removed);

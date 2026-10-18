@@ -42,7 +42,14 @@ export function requestKind(prompt: string): RequestKind {
   if (/\b(?:summari[sz]e|summary|tl;?dr)\b/i.test(prompt)) return "summarize";
   if (/\b(?:list|give me (?:some|a few|\d+)|name (?:some|a few|\d+)|brainstorm|ideas for)\b/i.test(prompt)) return "list";
   if (/\b(?:write|draft|compose|create (?:a|an|the)|rewrite)\b/i.test(prompt)) return "write";
-  if (/\b(?:explain|what is|what's|what are|how does|how do|how can|why|describe|tell me about|walk me through)\b/i.test(prompt)) {
+  // A request is often phrased as a wish: "I want to learn about X" asks for
+  // the same thing as "Explain X", and the tool was treating it as no request
+  // at all, so it offered nothing.
+  if (
+    /\b(?:explain|what is|what's|what are|how does|how do|how can|how it works?|why|describe|tell me about|teach me|walk me through|help me understand|want to (?:learn|know|understand)|interested in)\b/i.test(
+      prompt,
+    )
+  ) {
     return "explain";
   }
   return "other";

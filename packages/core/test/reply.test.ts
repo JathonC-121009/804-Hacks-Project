@@ -113,3 +113,29 @@ test("trimming a padded prompt keeps every piece of real content", async () => {
   }
   assert.deepEqual(r.added, [], "a prompt that states its length must get no second one");
 });
+
+test("a wish is treated as a request, and a restated motive is dropped", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  const { adviseOnPrompt } = await import("../src/advice.ts");
+  const prompt =
+    "hey i want to learn about close looped cooling because i am interested in " +
+    "closed looped cooling because i want to know how it work";
+  const r = rewritePrompt(prompt);
+  assert.ok(r.tokenDelta < 0, `expected shrinkage, got ${r.tokenDelta}`);
+  assert.match(r.rewritten, /^Explain /, r.rewritten);
+  assert.doesNotMatch(r.rewritten, /^hey/i);
+  assert.doesNotMatch(r.rewritten, /interested in/i, "the restated motive should be gone");
+  // The clause that adds a real requirement stays.
+  assert.match(r.rewritten, /how it work/i);
+  assert.ok(adviseOnPrompt(prompt).some((a) => a.kind === "unbounded"), "a wish still needs a length");
+});
+
+test("a because-clause that adds a real requirement is never dropped", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  for (const [prompt, keep] of [
+    ["Explain DNS because i want to understand latency in my app", /latency in my app/i],
+    ["Summarize the report because i need to brief my team tomorrow", /brief my team tomorrow/i],
+  ] as [string, RegExp][]) {
+    assert.match(rewritePrompt(prompt).rewritten, keep, prompt);
+  }
+});
