@@ -16,7 +16,7 @@ Full scope, sources and open decisions: [`docs/output-waste-optimizer-plan.md`](
 
 ## Run it
 
-The project needs **Node 22.13+**. The analysis engine still runs locally; accounts and aggregate usage history use Firebase Authentication, Firestore, and one HTTPS ingestion function.
+The project needs **Node 22.13+**. The analysis engine runs locally on every surface. Accounts, aggregate usage history and the public leaderboard use Firebase Authentication, Firestore and Hosting — all three on the **free Spark plan**, with no Cloud Functions and no billing account.
 
 ```bash
 npm run dev
@@ -34,20 +34,40 @@ Then open <http://127.0.0.1:5173/>.
 | `npm run typecheck` | Full type check — needs `npm install` |
 | `npm run build:ext` | Builds the browser extension into `extension/dist/` — needs `npm install` |
 | `npm run build:web` | Builds the static Firebase Hosting site into `dist/web/` |
-| `npm run firebase:install` | Installs the Cloud Function dependencies |
-| `npm run firebase:deploy` | Deploys Firestore rules and the ingestion function |
+| `npm run firebase:deploy` | Builds the site and deploys Hosting + Firestore rules |
+| `npm run firebase:rules` | Deploys `firestore.rules` on its own |
+| `npm run firebase:check` | Signs in to your project and round-trips a test event |
 
-### Connect Firebase
+### Connect Firebase (free Spark plan, no card required)
 
-1. Create a Firebase project and add a Web app.
-2. In Firebase Authentication, enable **Email/Password** sign-in.
-3. Create a Firestore database.
-4. Copy `config/firebase.example.json` to `config/firebase.json` and fill in the Web app values. Set `functionsBaseUrl` to `https://us-central1-PROJECT_ID.cloudfunctions.net`.
-5. Run `npx firebase-tools login`, then `npx firebase-tools use --add` and select the project.
-6. Run `npm run firebase:install && npm run firebase:deploy`. This builds and deploys Hosting, Firestore rules, and the ingestion function.
-7. Open the `web.app` URL printed by Firebase, create an account, and open **Connections** to create a device key. Use `npm run dev` for local development.
+1. Create a Firebase project and add a **Web app**.
+2. Authentication → Sign-in method → enable **Email/Password**.
+3. Firestore Database → **Create database** → production mode. Any region.
+4. Copy `config/firebase.example.json` to `config/firebase.json` and paste the four Web app values (`apiKey`, `authDomain`, `projectId`, `appId`).
+5. `npx firebase-tools login`, then `npx firebase-tools use --add` and pick the project.
+6. `npm run firebase:deploy` — deploys Hosting and the Firestore rules. Nothing else needs deploying.
+7. Open the `web.app` URL, create an account, then sign in with the same account in the extension popup and with `promptfootprint login --email you@example.com`.
+8. `npm run firebase:check` proves the whole path works: sign in, write an event, read it back, publish a leaderboard row, delete the test event.
 
-Firebase Web configuration is not an admin secret. Never put a service-account private key in this repository. Firestore rules isolate each account, and device keys are stored only as SHA-256 hashes.
+Rebuild the extension after step 4 (`npm run build:ext`) so your project values are copied into `extension/config/`.
+
+**Why there is no Cloud Function.** Functions need the paid Blaze plan, so every surface writes to Firestore directly as the signed-in user. That makes [`firestore.rules`](firestore.rules) the entire validation layer rather than a safety net behind a server: it checks ownership *and* shape, so an account can only ever write documents that look exactly like a usage event or a leaderboard row. There is no field for prompt or response text for one to arrive in.
+
+Firebase Web configuration is not an admin secret — it identifies the project, it does not authorize anything. Never put a service-account private key in this repository.
+
+#### What each surface writes
+
+| Collection | Who reads it | Who writes it | What is in it |
+|---|---|---|---|
+| `users/{uid}` | only you | only you | your leaderboard alias |
+| `users/{uid}/events/{id}` | only you | you, from any surface | token counts, efficiency, which detectors fired, resource ranges |
+| `leaderboard/{uid}` | **anyone** | only you, from the portal | alias, totals, efficiency, surfaces used |
+
+Events are append-only: the rules allow create and delete but never update, because an edited past reading is not a reading. The leaderboard is public on purpose — that is the ranking feature — so it carries an alias and never an email.
+
+#### Staying inside the free limits
+
+Spark gives 50,000 Firestore reads, 20,000 writes and 1 GiB of storage a day. One usage event is one write. The dashboard polls every 20 seconds and stops while the tab is hidden, which is about 4,300 reads a day for a tab left open all day. A hackathon demo is nowhere near either limit.
 
 ### Why the portal has no build step
 
@@ -100,15 +120,15 @@ node apps/cli/index.ts analyze -p "Summarize this" -r "Great question..." \
 
 The AI provider still receives the optimized prompt, but PromptFootprint's rewrite, suggestion, and waste analysis all stay local. The original AI answer stays on stdout so it can still be piped or redirected; PromptFootprint's preflight and report go to stderr.
 
-Link the terminal once; later `run` and `analyze` commands sync automatically:
+Sign in once; later `run` and `analyze` commands sync automatically:
 
 ```bash
-promptfootprint link --endpoint "https://us-central1-PROJECT.cloudfunctions.net/ingestUsage" --key "DEVICE_KEY"
+npm run cli -- login --email you@example.com
 ```
 
-The platform's **Connections** page generates the exact command. It is stored in `~/.promptfootprint/config.json` with owner-only permissions.
+It asks for the password without echoing it, then stores the refresh token (never the password) in `~/.promptfootprint/config.json` with owner-only permissions. `logout` clears it. `--password` and `PROMPTFOOTPRINT_PASSWORD` exist for scripts, but a password on a command line lands in your shell history.
 
-**Not built, by choice:** CLI log reader (Tier 2), leaderboard (Tier 3), and carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
+**Not built, by choice:** CLI log reader (Tier 2) and the carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
 
 ---
 
@@ -144,9 +164,12 @@ packages/core/src/     The engine. Pure functions, no I/O, no network.
   grid.ts              PJM carbon intensity
   card.ts              weekly card
 packages/core/test/    Core, CLI, gate, and sync privacy tests
-apps/portal/           Account dashboard, trends, connections, and universal analyzer
-firebase/functions/    Device-key ingestion endpoint
-firestore.rules        Per-account event isolation and device-key rules
+  firestore.ts         Firebase Auth + Firestore over REST, no SDK, no deps
+  sync.ts              the privacy-safe usage event and leaderboard aggregation
+apps/portal/           Account dashboard, trends, leaderboard, and universal analyzer
+apps/cli/              Terminal optimizer and account login
+extension/             MV3 browser extension: the pre-send nudge and reply receipt
+firestore.rules        The whole validation layer: ownership and document shape
 config/                sources.json — every figure with its source
 data/                  seeded demo data, all labelled as such
 scripts/               serve, seed, fetch_grid

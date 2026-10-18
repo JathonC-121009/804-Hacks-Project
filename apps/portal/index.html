@@ -38,7 +38,8 @@ npm run firebase:deploy</pre></div>
       <nav aria-label="Main navigation">
         <button class="nav-item active" type="button" data-view="overview"><span>01</span> Overview</button>
         <button class="nav-item" type="button" data-view="analyzer"><span>02</span> Analyzer</button>
-        <button class="nav-item" type="button" data-view="connections"><span>03</span> Connections</button>
+        <button class="nav-item" type="button" data-view="leaderboard"><span>03</span> Leaderboard</button>
+        <button class="nav-item" type="button" data-view="connections"><span>04</span> Connections</button>
       </nav>
       <div class="privacy-note"><strong>Content stays private.</strong><p>Only counts, efficiency scores, and resource estimates sync to your account.</p></div>
       <div class="account-strip"><span class="avatar" id="user-avatar">P</span><span class="account-copy"><strong id="user-email">Account</strong><small>Synced with Firebase</small></span><button id="sign-out" type="button" aria-label="Sign out">↗</button></div>
@@ -83,14 +84,29 @@ npm run firebase:deploy</pre></div>
         </div>
       </section>
 
+      <section id="view-leaderboard" class="view">
+        <div class="connections-intro"><h2>Efficiency, ranked.</h2><p>Every account that measures at least five replies appears here. Aliases and totals only &mdash; no prompts, no responses, no email addresses.</p></div>
+        <article class="surface recent-panel">
+          <div class="section-head"><div><h2>Public ranking</h2><p id="leaderboard-note">Loading the board&hellip;</p></div><button id="refresh-leaderboard" class="button button-secondary" type="button">Refresh</button></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>#</th><th>Alias</th><th>Efficiency</th><th>Replies</th><th>Waste found</th><th>Surfaces</th></tr></thead><tbody id="leaderboard-rows"></tbody></table>
+            <div id="leaderboard-empty" class="empty-state"><strong>Nobody has qualified yet</strong><p>Measure five replies on any surface to claim a place.</p></div>
+          </div>
+        </article>
+        <article class="surface device-panel">
+          <div class="section-head"><div><h2>Your leaderboard name</h2><p>Shown publicly. Defaults to an anonymous alias; an email address is rejected.</p></div></div>
+          <div class="device-form"><label class="field"><span>Alias</span><input id="alias-input" maxlength="24" placeholder="anon-a1b2c3"></label><button id="save-alias" class="button button-primary" type="button">Save name</button></div>
+        </article>
+      </section>
+
       <section id="view-connections" class="view">
-        <div class="connections-intro"><h2>Bring every workflow into one view.</h2><p>Create one device key, then connect the browser extension and terminal. Keys can be replaced without changing your account password.</p></div>
+        <div class="connections-intro"><h2>Bring every workflow into one view.</h2><p>Sign in with this same email and password on the extension and the terminal. There is no server in the middle and no key to copy: each surface writes to your account directly, and the security rules only accept measurements.</p></div>
         <div class="connection-grid">
-          <article class="connection-card"><span class="connection-index">01</span><h3>Browser extension</h3><p>Tracks supported web AI tools and sends aggregate receipts to this dashboard.</p><ol><li>Create a device key below.</li><li>Open the extension popup.</li><li>Paste the endpoint and key.</li></ol></article>
-          <article class="connection-card"><span class="connection-index">02</span><h3>Terminal CLI</h3><p>Improves prompts, runs your AI CLI, and syncs the result.</p><pre id="cli-command">promptfootprint link --endpoint ENDPOINT --key KEY</pre><button class="text-button copy-command" type="button">Copy command</button></article>
-          <article class="connection-card"><span class="connection-index">03</span><h3>Unsupported platforms</h3><p>Use the Analyzer. Content stays in this browser; only measurements are saved.</p><button class="text-button" type="button" data-view-jump="analyzer">Open analyzer →</button></article>
+          <article class="connection-card"><span class="connection-index">01</span><h3>Browser extension</h3><p>Fixes prompts before you send them on supported AI sites, then records what the reply cost.</p><ol><li>Load the extension in Chrome.</li><li>Open its popup and sign in with this account.</li><li>Replies start appearing here.</li></ol></article>
+          <article class="connection-card"><span class="connection-index">02</span><h3>Terminal CLI</h3><p>Improves the prompt, runs your AI CLI, and records the result.</p><pre id="cli-command">promptfootprint login --email you@example.com</pre><button class="text-button copy-command" type="button">Copy command</button></article>
+          <article class="connection-card"><span class="connection-index">03</span><h3>Unsupported platforms</h3><p>Use the Analyzer. Content stays in this browser; only measurements are saved.</p><button class="text-button" type="button" data-view-jump="analyzer">Open analyzer &rarr;</button></article>
         </div>
-        <article class="surface device-panel"><div class="section-head"><div><h2>Create a device key</h2><p>The secret is shown once. Store it like a password.</p></div></div><div class="device-form"><label class="field"><span>Device name</span><input id="device-label" value="My laptop" maxlength="60"></label><button id="create-device" class="button button-primary" type="button">Create key</button></div><div id="device-result" class="device-result" hidden><label class="field"><span>Sync endpoint</span><input id="device-endpoint" readonly></label><label class="field"><span>Device key</span><input id="device-key" readonly></label><button id="copy-device" class="button button-secondary" type="button">Copy both</button></div></article>
+        <article class="surface device-panel"><div class="section-head"><div><h2>What leaves your device</h2><p>Per reply: token counts, an efficiency score, which detectors fired, and resource ranges. That is the entire document, and firestore.rules rejects any field beyond it.</p></div></div></article>
       </section>
     </section>
   </div>

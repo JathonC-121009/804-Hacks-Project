@@ -2,9 +2,15 @@
   "manifest_version": 3,
   "name": "Output-Waste Optimizer",
   "version": "0.1.0",
-  "description": "Improves prompts before you send and tracks aggregate AI efficiency across tools without uploading conversation text.",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "optional_host_permissions": ["https://*/*"],
+  "description": "Improves prompts before you send them, scores what each AI reply wasted, and syncs only aggregate measurements to your own Firebase account.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
@@ -23,7 +29,10 @@
     "https://you.com/*",
     "https://www.you.com/*",
     "http://localhost/*",
-    "http://127.0.0.1/*"
+    "http://127.0.0.1/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
   ],
   "content_scripts": [
     {
@@ -47,16 +56,28 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["loader.js"],
-      "css": ["overlay.css"],
+      "js": [
+        "loader.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/*", "config/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "dist/*",
+        "config/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "Output-Waste Optimizer" }
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Output-Waste Optimizer"
+  }
 }

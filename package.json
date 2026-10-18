@@ -20,9 +20,10 @@
     "check": "npm test && npm run typecheck",
     "build:ext": "bash scripts/build-ext.sh",
     "build:web": "node scripts/build-web.ts",
-    "firebase:install": "npm --prefix firebase/functions install",
-    "firebase:deploy": "npm run build:web && npx firebase-tools deploy --only hosting,firestore,functions",
-    "mock": "echo 'Start npm run dev, then open http://localhost:5173/extension/mock/index.html'"
+    "firebase:deploy": "npm run build:web && npx --yes firebase-tools deploy --only hosting,firestore",
+    "mock": "echo 'Start npm run dev, then open http://localhost:5173/extension/mock/index.html'",
+    "firebase:rules": "npx --yes firebase-tools deploy --only firestore:rules",
+    "firebase:check": "node scripts/check-firebase.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

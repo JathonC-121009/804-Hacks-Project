@@ -19,14 +19,18 @@
 
 import type { Config, Estimate, Flag, ModelClass, Range } from "../../packages/core/src/index.ts";
 import {
+  FirestoreClient,
   analyze,
   buildInstructionBlock,
   estimate,
   estimateTokens,
+  isFirebaseConfigured,
+  pushUsageEvent,
   rewritePrompt,
-  sendSyncUsageEvent,
   suggestModel,
   syncUsageEvent,
+  type AuthSession,
+  type FirebaseWebConfig,
 } from "../../packages/core/src/index.ts";
 import { pick, pickAll, readComposer, siteFor, type SiteConfig } from "./sites.ts";
 
@@ -47,18 +51,56 @@ let config: Config | null = null;
  * tokens are not worth being the invisible cause of a bad answer.
  */
 let autoDirections = false;
-let syncEndpoint = "";
-let syncKey = "";
+
+/**
+ * Account sync, also off until the user signs in from the popup.
+ *
+ * On the free Firebase plan there is no server to post to, so this writes the
+ * receipt straight to Firestore as the signed-in user. The session lives in
+ * chrome.storage, which means the popup can revoke it and every open tab picks
+ * that up through the storage listener below.
+ */
+let session: AuthSession | null = null;
+let firebase: FirebaseWebConfig | null = null;
+let client: FirestoreClient | null = null;
+
+function readSession(value: unknown): AuthSession | null {
+  const candidate = value as Partial<AuthSession> | undefined;
+  return candidate?.uid && candidate.refreshToken && candidate.idToken
+    ? {
+        uid: candidate.uid,
+        idToken: candidate.idToken,
+        refreshToken: candidate.refreshToken,
+        expiresAt: candidate.expiresAt ?? 0,
+      }
+    : null;
+}
 
 function loadSettings(): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage?.local.get(["autoDirections", "syncEndpoint", "syncKey"], (s) => {
+    chrome.storage?.local.get(["autoDirections", "pfSession"], (s) => {
       autoDirections = s["autoDirections"] === true;
-      syncEndpoint = typeof s["syncEndpoint"] === "string" ? s["syncEndpoint"] : "";
-      syncKey = typeof s["syncKey"] === "string" ? s["syncKey"] : "";
+      session = readSession(s["pfSession"]);
+      client = null;
       resolve();
     });
   });
+}
+
+/**
+ * A client for the current session, built lazily and thrown away whenever the
+ * session changes. It writes refreshed tokens back to chrome.storage so a tab
+ * left open past the one-hour token lifetime keeps syncing.
+ */
+function firestore(): FirestoreClient | null {
+  if (!session || !firebase) return null;
+  client ??= new FirestoreClient(firebase, session, {
+    onSession: (next) => {
+      session = next;
+      chrome.storage?.local.set({ pfSession: next });
+    },
+  });
+  return client;
 }
 
 // --- setup ------------------------------------------------------------------
@@ -71,13 +113,26 @@ async function loadConfig(): Promise<Config> {
   return { sources, models };
 }
 
+/** Absent or unfilled config is normal: sync is optional, analysis is not. */
+async function loadFirebaseConfig(): Promise<FirebaseWebConfig | null> {
+  try {
+    const candidate = await fetch(chrome.runtime.getURL("config/firebase.json")).then((r) => r.json());
+    return isFirebaseConfigured(candidate) ? (candidate as FirebaseWebConfig) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function boot(): Promise<void> {
   config = await loadConfig();
+  firebase = await loadFirebaseConfig();
   await loadSettings();
   chrome.storage?.onChanged?.addListener((changes) => {
     if (changes["autoDirections"]) autoDirections = changes["autoDirections"].newValue === true;
-    if (changes["syncEndpoint"]) syncEndpoint = changes["syncEndpoint"].newValue ?? "";
-    if (changes["syncKey"]) syncKey = changes["syncKey"].newValue ?? "";
+    if (changes["pfSession"]) {
+      session = readSession(changes["pfSession"].newValue);
+      client = null;
+    }
   });
   installProbe();
   watchComposer();
@@ -457,7 +512,8 @@ async function syncReceipt(
   est: Estimate,
   modelClass: ModelClass,
 ): Promise<void> {
-  if (!syncEndpoint || !syncKey) return;
+  const target = firestore();
+  if (!target) return;
   const event = syncUsageEvent({
     surface: "web",
     tool: site.id,
@@ -476,7 +532,7 @@ async function syncReceipt(
     estimate: est,
   });
   try {
-    await sendSyncUsageEvent(syncEndpoint, syncKey, event);
+    await pushUsageEvent(target, event);
   } catch (error) {
     console.warn("[PromptFootprint] Account sync failed; local tracking still succeeded.", error);
   }

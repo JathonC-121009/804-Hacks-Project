@@ -1,25 +1,122 @@
 rules_version = '2';
+
+// The free Spark plan has no Cloud Functions, so there is no server in front of
+// this database: every client writes its own documents. That makes this file
+// the whole validation layer, not a safety net behind one. Rules therefore
+// check SHAPE as well as ownership - a signed-in user may only write documents
+// that look exactly like a usage event or a leaderboard row, with no field for
+// prompt or response text to arrive in even if a future client tried to send it.
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() { return request.auth != null; }
     function owns(uid) { return signedIn() && request.auth.uid == uid; }
 
+    function num(value, lo, hi) {
+      return value is number && value >= lo && value <= hi;
+    }
+
+    // A measurement range: {low, high, unit}. No free text beyond a unit label.
+    function isRange(value) {
+      return value is map
+        && value.keys().hasOnly(['low', 'high', 'unit'])
+        && value.keys().hasAll(['low', 'high', 'unit'])
+        && num(value.low, 0, 1000000000)
+        && num(value.high, 0, 1000000000)
+        && value.unit is string
+        && value.unit.size() <= 8;
+    }
+
+    function isResourceBundle(value) {
+      return value is map
+        && value.keys().hasOnly(['energyWh', 'waterMl', 'co2g', 'cost'])
+        && value.keys().hasAll(['energyWh', 'waterMl', 'co2g', 'cost'])
+        && isRange(value.energyWh)
+        && isRange(value.waterMl)
+        && isRange(value.co2g)
+        && isRange(value.cost);
+    }
+
+    function isTokenCounts(value) {
+      return value is map
+        && value.keys().hasOnly(['input', 'output', 'reasoning', 'cache_read', 'cache_write'])
+        && num(value.input, 0, 100000000)
+        && num(value.output, 0, 100000000);
+    }
+
+    function isUsageEvent(d, eventId) {
+      return d.keys().hasOnly([
+          'version', 'id', 'timestamp', 'surface', 'tool', 'modelClass', 'tokens',
+          'totalOutputTokens', 'wastedOutputTokens', 'efficiency', 'flagTypes', 'resources'
+        ])
+        && d.version == 1
+        && d.id == eventId
+        && d.timestamp is string && d.timestamp.size() <= 40
+        && d.surface in ['paste', 'web', 'cli']
+        && d.tool is string && d.tool.size() <= 80
+        && d.modelClass in ['small', 'medium', 'large']
+        && isTokenCounts(d.tokens)
+        && num(d.totalOutputTokens, 0, 10000000)
+        && num(d.wastedOutputTokens, 0, d.totalOutputTokens)
+        && num(d.efficiency, 0, 1)
+        && d.flagTypes is list && d.flagTypes.size() <= 12
+        && d.resources is map
+        && d.resources.keys().hasOnly(['total', 'wasted'])
+        && isResourceBundle(d.resources.total)
+        && isResourceBundle(d.resources.wasted);
+    }
+
+    // A public row. Deliberately the same numbers the owner already sees, plus
+    // a chosen alias - never an email, because anyone on the internet reads this.
+    function isLeaderboardRow(d, uid) {
+      return d.keys().hasOnly([
+          'version', 'uid', 'alias', 'replies', 'totalOutputTokens', 'wastedOutputTokens',
+          'efficiency', 'savedEnergyWhLow', 'savedEnergyWhHigh', 'surfaces', 'updatedAt'
+        ])
+        && d.version == 1
+        && d.uid == uid
+        && d.alias is string && d.alias.size() >= 2 && d.alias.size() <= 24
+        && !d.alias.matches('.*@.*')
+        && num(d.replies, 0, 10000000)
+        && num(d.totalOutputTokens, 0, 1000000000)
+        && num(d.wastedOutputTokens, 0, d.totalOutputTokens)
+        && num(d.efficiency, 0, 1)
+        && num(d.savedEnergyWhLow, 0, 1000000000)
+        && num(d.savedEnergyWhHigh, 0, 1000000000)
+        && d.surfaces is list && d.surfaces.size() <= 3
+        && d.updatedAt is string && d.updatedAt.size() <= 40;
+    }
+
+    // Private: one document per person, holding a display name and nothing else.
     match /users/{uid} {
-      allow read, create, update: if owns(uid);
+      allow read: if owns(uid);
+      allow create, update: if owns(uid)
+        && request.resource.data.keys().hasOnly(['alias', 'updatedAt'])
+        && request.resource.data.alias is string
+        && request.resource.data.alias.size() <= 24;
       allow delete: if false;
 
+      // Private: the measurement history behind the dashboard.
       match /events/{eventId} {
-        allow read, create, delete: if owns(uid);
+        allow read, delete: if owns(uid);
+        allow create: if owns(uid) && isUsageEvent(request.resource.data, eventId);
+        // Measurements are append-only. An edited past reading is not a reading.
         allow update: if false;
       }
     }
 
-    match /deviceTokens/{tokenHash} {
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['uid', 'label', 'createdAt']);
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
-      allow read, update: if false;
+    // Public by design: the ranking is the point. Read by anyone, written only
+    // by its owner, and only in the exact shape above.
+    match /leaderboard/{uid} {
+      allow read: if true;
+      allow create, update: if owns(uid) && isLeaderboardRow(request.resource.data, uid);
+      allow delete: if owns(uid);
+    }
+
+    // Anything not named above is closed, including the deviceTokens collection
+    // the old Cloud Function used.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -2,6 +2,5 @@
   "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
   "authDomain": "YOUR_PROJECT.firebaseapp.com",
   "projectId": "YOUR_PROJECT_ID",
-  "appId": "YOUR_FIREBASE_APP_ID",
-  "functionsBaseUrl": "https://us-central1-YOUR_PROJECT_ID.cloudfunctions.net"
+  "appId": "YOUR_FIREBASE_APP_ID"
 }

@@ -1,4 +1,7 @@
 import {
+  LEADERBOARD_MIN_REPLIES,
+  cleanAlias,
+  defaultAlias,
   estimateTokens,
   parseGridData,
   rewritePrompt,
@@ -8,16 +11,20 @@ import {
   type Config,
   type FullAnalysis,
   type GridData,
+  type LeaderboardEntry,
   type ModelClass,
   type Range,
   type SyncUsageEvent,
 } from "../../packages/core/src/index.ts";
 import {
   createAccount,
-  createDeviceKey,
   initializeFirebase,
+  loadAlias,
+  loadLeaderboard,
   observeEvents,
   observeUser,
+  publishLeaderboard,
+  saveAlias,
   saveEvent,
   signIn,
   signOut,
@@ -48,10 +55,13 @@ let events: SyncUsageEvent[] = [];
 let stopEvents: (() => void) | null = null;
 let authMode: "signin" | "signup" = "signin";
 let latestRewrite = "";
+let alias = "";
+let board: LeaderboardEntry[] = [];
 
 const VIEW_COPY: Record<string, { title: string; kicker: string }> = {
   overview: { title: "Overview", kicker: "Unified intelligence" },
   analyzer: { title: "Analyzer", kicker: "Before you spend" },
+  leaderboard: { title: "Leaderboard", kicker: "Public efficiency ranking" },
   connections: { title: "Connections", kicker: "One account, every surface" },
 };
 
@@ -103,10 +113,82 @@ function handleUser(next: PortalUser | null): void {
   el("app-shell").hidden = false;
   el("user-email").textContent = user.email;
   el("user-avatar").textContent = user.email.slice(0, 1).toUpperCase();
+  alias = defaultAlias(user.uid);
+  el<HTMLInputElement>("alias-input").value = "";
+  void loadAlias(user.uid)
+    .then((saved) => {
+      if (!saved) return;
+      alias = saved;
+      el<HTMLInputElement>("alias-input").value = saved;
+    })
+    .catch(() => undefined);
   stopEvents = observeEvents(user.uid, (nextEvents) => {
     events = nextEvents;
     renderDashboard();
+    // Publishing on every refresh keeps the public row honest when the
+    // extension or CLI added events while this tab was open.
+    void syncLeaderboardRow();
   });
+  void refreshLeaderboard();
+}
+
+/**
+ * Push this account's public row, then reload the board.
+ *
+ * Only the portal writes a leaderboard row: it is the one surface that has the
+ * whole event list, so it is the only one whose total can be right.
+ */
+async function syncLeaderboardRow(): Promise<void> {
+  if (!user || events.length === 0) return;
+  try {
+    await publishLeaderboard(user.uid, alias, events);
+  } catch (error) {
+    console.error("Publishing your leaderboard row failed", error);
+  }
+}
+
+async function refreshLeaderboard(): Promise<void> {
+  try {
+    board = await loadLeaderboard();
+    renderLeaderboard();
+  } catch (error) {
+    el("leaderboard-note").textContent =
+      error instanceof Error ? error.message : "The leaderboard could not be loaded.";
+  }
+}
+
+function renderLeaderboard(): void {
+  const rows = board;
+  el("leaderboard-empty").hidden = rows.length > 0;
+  el("leaderboard-note").textContent =
+    `Public ranking. Shows accounts with at least ${LEADERBOARD_MIN_REPLIES} measured replies. Aliases and totals only, never conversation text.`;
+  el<HTMLTableSectionElement>("leaderboard-rows").innerHTML = rows
+    .map((row, index) => {
+      const mine = row.uid === user?.uid;
+      const saved = (row.savedEnergyWhLow + row.savedEnergyWhHigh) / 2;
+      return `<tr class="${mine ? "is-me" : ""}"><td><strong>${index + 1}</strong></td><td>${esc(row.alias)}${mine ? ' <span class="source-chip paste">you</span>' : ""}</td><td><strong>${Math.round(row.efficiency * 100)}%</strong></td><td>${row.replies.toLocaleString()}</td><td>${resource(saved, "Wh")}</td><td>${row.surfaces.map((s) => `<span class="source-chip ${esc(s)}">${esc(s)}</span>`).join(" ")}</td></tr>`;
+    })
+    .join("");
+}
+
+async function submitAlias(): Promise<void> {
+  if (!user) return;
+  const button = el<HTMLButtonElement>("save-alias");
+  const raw = el<HTMLInputElement>("alias-input").value;
+  const next = cleanAlias(raw, user.uid);
+  button.disabled = true;
+  try {
+    await saveAlias(user.uid, next);
+    alias = next;
+    el<HTMLInputElement>("alias-input").value = next;
+    await syncLeaderboardRow();
+    await refreshLeaderboard();
+    showToast(`Leaderboard name set to ${next}`);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function wireUi(): void {
@@ -121,12 +203,8 @@ function wireUi(): void {
   });
   el("analyze-btn").addEventListener("click", () => void analyze());
   el("copy-rewrite").addEventListener("click", () => void copy(latestRewrite, "Improved prompt copied"));
-  el("create-device").addEventListener("click", () => void createConnection());
-  el("copy-device").addEventListener("click", () => {
-    const endpoint = el<HTMLInputElement>("device-endpoint").value;
-    const key = el<HTMLInputElement>("device-key").value;
-    void copy(`Endpoint: ${endpoint}\nDevice key: ${key}`, "Connection copied");
-  });
+  el("save-alias").addEventListener("click", () => void submitAlias());
+  el("refresh-leaderboard").addEventListener("click", () => void refreshLeaderboard());
   document.querySelector(".copy-command")?.addEventListener("click", () => {
     void copy(el("cli-command").textContent ?? "", "CLI command copied");
   });
@@ -294,8 +372,12 @@ async function analyze(): Promise<void> {
   el("sync-label").textContent = "Saving…";
   try {
     await saveEvent(user.uid, record);
+    events = [record, ...events];
+    renderDashboard();
     el("sync-label").textContent = "Live sync";
     showToast("Analysis saved to your unified dashboard");
+    await syncLeaderboardRow();
+    await refreshLeaderboard();
   } catch (reason) {
     el("sync-label").textContent = "Sync error";
     error.textContent = reason instanceof Error ? reason.message : String(reason);
@@ -318,26 +400,6 @@ function renderAnalysis(result: FullAnalysis): void {
 function rangeText(range: Range): string {
   const digits = range.high < 1 ? 3 : 1;
   return `${range.low.toFixed(digits)}–${range.high.toFixed(digits)} ${range.unit}`;
-}
-
-async function createConnection(): Promise<void> {
-  if (!user) return;
-  const button = el<HTMLButtonElement>("create-device");
-  button.disabled = true;
-  button.textContent = "Creating…";
-  try {
-    const result = await createDeviceKey(user.uid, el<HTMLInputElement>("device-label").value);
-    el<HTMLInputElement>("device-endpoint").value = result.endpoint;
-    el<HTMLInputElement>("device-key").value = result.key;
-    el("device-result").hidden = false;
-    el("cli-command").textContent = `promptfootprint link --endpoint ${result.endpoint} --key ${result.key}`;
-    showToast("Device key created. It is shown only on this screen.");
-  } catch (error) {
-    showToast(error instanceof Error ? error.message : String(error));
-  } finally {
-    button.disabled = false;
-    button.textContent = "Create key";
-  }
 }
 
 async function copy(value: string, message: string): Promise<void> {

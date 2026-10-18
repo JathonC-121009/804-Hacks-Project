@@ -4,3 +4,4 @@
 [hidden]{display:none!important}body{overflow-x:hidden}.setup-card{min-width:0;overflow:hidden}.setup-card h1{overflow-wrap:anywhere}.setup-card pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:720px){.account-strip{width:auto}.account-strip .avatar,.account-strip .account-copy{display:none}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+.source-chip.web{background:#17313a;color:#63dcd3}tr.is-me td{background:#102b2c}tr.is-me td:first-child strong{color:#d8ff66}

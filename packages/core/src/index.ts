@@ -60,12 +60,41 @@ export { DEFAULT_BASELINE, describeBaseline, efficiencyOf, weeklyCard, wastedTok
 export { emptyTokenCounts, estimateTokens, outputTokens, totalTokens } from "./tokens.ts";
 export { countWords, mergeIntervals, splitSentences, stableHash } from "./text.ts";
 export {
+  ALIAS_MAX,
+  LEADERBOARD_MIN_REPLIES,
+  LEADERBOARD_VERSION,
   SYNC_EVENT_VERSION,
-  sendSyncUsageEvent,
+  cleanAlias,
+  defaultAlias,
+  fetchLeaderboard,
+  isValidEventId,
+  leaderboardEntry,
+  parseLeaderboardEntry,
+  paths,
+  pushUsageEvent,
+  putLeaderboardEntry,
+  rankLeaderboard,
   syncUsageEvent,
+  type LeaderboardEntry,
   type SyncEventInput,
   type SyncUsageEvent,
 } from "./sync.ts";
+export {
+  FIREBASE_ORIGINS,
+  FirestoreClient,
+  decodeFields,
+  decodeValue,
+  encodeFields,
+  encodeValue,
+  isFirebaseConfigured,
+  refreshSession,
+  runQuery,
+  signInWithPassword,
+  signUp,
+  type AuthSession,
+  type FirebaseWebConfig,
+  type FirestoreValue,
+} from "./firestore.ts";
 
 /**
  * One call that produces everything the paste-in analyzer shows.

@@ -7,13 +7,19 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  FirestoreClient,
+  isFirebaseConfigured,
+  pushUsageEvent,
+  refreshSession,
   rewritePrompt,
   runFullAnalysis,
+  signInWithPassword,
   suggestModel,
   estimateTokens,
-  sendSyncUsageEvent,
   syncUsageEvent,
+  type AuthSession,
   type Config,
+  type FirebaseWebConfig,
   type FullAnalysis,
   type GridData,
   type ModelClass,
@@ -43,7 +49,7 @@ Usage:
   npm run cli -- analyze --prompt "..." --response "..."
   npm run cli -- rewrite --prompt "..."
   npm run cli -- suggest --prompt "..."
-  npm run cli -- link --endpoint URL --key DEVICE_KEY
+  npm run cli -- login --email you@example.com
 
 Run behavior:
   1. Removes local prompt waste and adds a concise output instruction.
@@ -59,9 +65,15 @@ Run options:
       --dry-run                  Show the fixed prompt without running the AI
       --no-color                 Disable ANSI color
 
-Account sync:
-  link --endpoint URL --key KEY  Save a device connection for automatic sync
-  PROMPTFOOTPRINT_SYNC_URL and PROMPTFOOTPRINT_SYNC_KEY override saved values
+Account sync (optional, Firebase free plan):
+  login --email ADDRESS          Sign in once; later analyses sync automatically
+  logout                         Forget the saved session on this machine
+      --password TEXT            Non-interactive password (prefer the prompt)
+  PROMPTFOOTPRINT_PASSWORD       Password for scripted logins
+
+The session is stored in ~/.promptfootprint/config.json with 0600 permissions.
+Only measurements are uploaded: token counts, an efficiency score, which
+detectors fired and resource ranges. Prompt and response text never leave.
 
 The fixed prompt is appended to the command. Put a quoted "{prompt}" argument
 after -- to place it somewhere else instead.
@@ -89,6 +101,7 @@ Examples:
   npm run cli -- run -p "Summarize notes.txt" -- my-ai --message "{prompt}"
   gemini -p "Explain DNS" | npm run cli -- analyze -p "Explain DNS" --tool gemini
   npm run cli -- analyze -p "Summarize this" -r "Great question..." --json
+  npm run cli -- login --email you@example.com
 `;
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -369,44 +382,123 @@ async function analyzeCommand(parsed: ParsedArgs): Promise<void> {
   await syncResult(result);
 }
 
-interface SyncConfig { endpoint: string; key: string }
+/** The saved session. Holds a refresh token, never a password. */
+interface StoredSession extends AuthSession {
+  email: string;
+}
 
 function syncConfigPath(): string {
   return join(homedir(), ".promptfootprint", "config.json");
 }
 
-async function readSyncConfig(): Promise<SyncConfig | null> {
-  const fromEnvironment = {
-    endpoint: process.env.PROMPTFOOTPRINT_SYNC_URL ?? "",
-    key: process.env.PROMPTFOOTPRINT_SYNC_KEY ?? "",
-  };
-  if (fromEnvironment.endpoint && fromEnvironment.key) return fromEnvironment;
+async function readStoredSession(): Promise<StoredSession | null> {
   try {
-    const value = JSON.parse(await readFile(syncConfigPath(), "utf8")) as Partial<SyncConfig>;
-    return value.endpoint && value.key ? { endpoint: value.endpoint, key: value.key } : null;
+    const value = JSON.parse(await readFile(syncConfigPath(), "utf8")) as Partial<StoredSession>;
+    return value.uid && value.refreshToken && value.idToken
+      ? {
+          uid: value.uid,
+          email: value.email ?? "",
+          idToken: value.idToken,
+          refreshToken: value.refreshToken,
+          expiresAt: value.expiresAt ?? 0,
+        }
+      : null;
   } catch {
     return null;
   }
 }
 
-async function linkCommand(parsed: ParsedArgs): Promise<void> {
-  const endpoint = parsed.options.endpoint;
-  const key = parsed.options.key;
-  if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint)) {
-    throw new Error("--endpoint must be the HTTPS endpoint shown on the platform Connections page.");
-  }
-  if (typeof key !== "string" || key.length < 32) {
-    throw new Error("--key must be the device key shown on the platform Connections page.");
-  }
+async function writeStoredSession(session: StoredSession): Promise<void> {
   const path = syncConfigPath();
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify({ endpoint, key }, null, 2)}\n`, { mode: 0o600 });
-  console.log(`Linked this terminal to PromptFootprint. Future analyses will sync automatically.\nSaved: ${path}`);
+  await writeFile(path, `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 });
+}
+
+async function loadFirebaseConfig(): Promise<FirebaseWebConfig> {
+  const config = (await readJson(new URL("../../config/firebase.json", import.meta.url)).catch(
+    () => null,
+  )) as FirebaseWebConfig | null;
+  if (!isFirebaseConfigured(config)) {
+    throw new Error(
+      "Firebase is not configured. Copy config/firebase.example.json to config/firebase.json and paste your web app values.",
+    );
+  }
+  return config as FirebaseWebConfig;
+}
+
+/**
+ * Read a password without echoing it.
+ *
+ * A password passed as --password lands in the shell history and in `ps`, so
+ * the flag exists for scripts and this prompt is the path a person should use.
+ */
+async function askPassword(promptText: string): Promise<string> {
+  if (!process.stdin.isTTY) {
+    throw new Error("No terminal to ask for a password. Use --password or PROMPTFOOTPRINT_PASSWORD.");
+  }
+  process.stderr.write(promptText);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  let value = "";
+  try {
+    for await (const chunk of process.stdin) {
+      const text = Buffer.from(chunk).toString("utf8");
+      if (text.includes("\u0003")) throw new Error("Cancelled.");
+      if (text.includes("\r") || text.includes("\n")) break;
+      if (text === "\u007f" || text === "\b") value = value.slice(0, -1);
+      else value += text.replace(/[\u0000-\u001f]/g, "");
+    }
+  } finally {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.stderr.write("\n");
+  }
+  return value;
+}
+
+async function loginCommand(parsed: ParsedArgs): Promise<void> {
+  const config = await loadFirebaseConfig();
+  const email = typeof parsed.options.email === "string" ? parsed.options.email.trim() : "";
+  if (!email.includes("@")) throw new Error("--email is required. Use the account from the dashboard.");
+  const password =
+    (typeof parsed.options.password === "string" ? parsed.options.password : "") ||
+    process.env.PROMPTFOOTPRINT_PASSWORD ||
+    (await askPassword(`Password for ${email}: `));
+  if (!password) throw new Error("A password is required.");
+  const session = await signInWithPassword(config.apiKey, email, password);
+  await writeStoredSession({ ...session, email });
+  console.log(
+    `Signed in as ${email}. Future analyses sync to your dashboard and leaderboard row.\nSaved: ${syncConfigPath()}`,
+  );
+}
+
+async function logoutCommand(): Promise<void> {
+  const path = syncConfigPath();
+  await writeFile(path, "{}\n", { mode: 0o600 }).catch(() => undefined);
+  console.log(`Signed out. Measurements stay on this machine.\nCleared: ${path}`);
+}
+
+/**
+ * A client for the saved session, refreshing the token when it has aged out.
+ *
+ * Returns null rather than throwing when nothing is signed in: sync is opt-in,
+ * and a local analysis must not fail because an account was never connected.
+ */
+async function syncClient(): Promise<FirestoreClient | null> {
+  const stored = await readStoredSession();
+  if (!stored) return null;
+  const config = await loadFirebaseConfig();
+  let session: AuthSession = stored;
+  if (session.expiresAt - Date.now() < 60_000) {
+    session = await refreshSession(config.apiKey, session.refreshToken);
+    await writeStoredSession({ ...session, email: stored.email });
+  }
+  return new FirestoreClient(config, session, {
+    onSession: (next) => writeStoredSession({ ...next, email: stored.email }),
+  });
 }
 
 async function syncResult(result: FullAnalysis): Promise<void> {
-  const connection = await readSyncConfig();
-  if (!connection) return;
   const record = syncUsageEvent({
     id: result.event.id,
     timestamp: result.event.timestamp,
@@ -421,7 +513,9 @@ async function syncResult(result: FullAnalysis): Promise<void> {
     estimate: result.estimate,
   });
   try {
-    await sendSyncUsageEvent(connection.endpoint, connection.key, record);
+    const client = await syncClient();
+    if (!client) return;
+    await pushUsageEvent(client, record);
     console.error("PromptFootprint: synced to your account.");
   } catch (error) {
     console.error(`PromptFootprint: analysis completed, but account sync failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -453,7 +547,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return 0;
     }
     if (parsed.command === "run") return await runCommand(parsed);
-    if (parsed.command === "link") await linkCommand(parsed);
+    if (parsed.command === "login") await loginCommand(parsed);
+    else if (parsed.command === "logout") await logoutCommand();
     else if (parsed.command === "analyze") await analyzeCommand(parsed);
     else if (parsed.command === "rewrite" || parsed.command === "suggest") await promptOnlyCommand(parsed);
     else throw new Error(`Unknown command "${parsed.command}".\n\n${HELP}`);

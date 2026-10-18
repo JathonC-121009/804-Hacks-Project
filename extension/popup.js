@@ -1,4 +1,11 @@
-// Plain JS on purpose: the popup stays usable without a second build target.
+// Plain JS on purpose: the popup stays out of the TypeScript build. It does
+// import the compiled core for auth, so the popup, the content script and the
+// CLI all sign in through exactly one code path.
+import {
+  isFirebaseConfigured,
+  signInWithPassword,
+} from "./dist/packages/core/src/firestore.js";
+
 const $ = (id) => document.getElementById(id);
 
 const BUILT_IN_HOSTS = [
@@ -136,34 +143,67 @@ chrome.storage.local.get(["autoDirections"], (s) => {
   $("auto").checked = s.autoDirections === true;
 });
 
-chrome.storage.local.get(["syncEndpoint", "syncKey"], (s) => {
-  $("sync-endpoint").value = s.syncEndpoint ?? "";
-  $("sync-key").value = s.syncKey ?? "";
-  if (s.syncEndpoint && s.syncKey) $("sync-status").textContent = "Connected. New replies sync automatically.";
+async function firebaseConfig() {
+  const response = await fetch(chrome.runtime.getURL("config/firebase.json"));
+  if (!response.ok) throw new Error("config/firebase.json is missing from the extension build.");
+  const config = await response.json();
+  if (!isFirebaseConfigured(config)) {
+    throw new Error("Firebase is not configured yet. Fill in config/firebase.json and rebuild.");
+  }
+  return config;
+}
+
+function showSignedIn(email) {
+  $("sync-form").hidden = true;
+  $("sign-in").hidden = true;
+  $("sign-out").hidden = false;
+  $("sync-status").textContent = `Signed in as ${email}. New replies sync automatically.`;
+  $("sync-status").dataset.state = "ok";
+}
+
+function showSignedOut(message = "") {
+  $("sync-form").hidden = false;
+  $("sign-in").hidden = false;
+  $("sign-out").hidden = true;
+  $("sync-status").textContent = message;
+}
+
+chrome.storage.local.get(["pfSession", "pfEmail"], (s) => {
+  if (s.pfSession?.refreshToken) showSignedIn(s.pfEmail ?? "your account");
+  else showSignedOut();
 });
 
-$("save-sync").addEventListener("click", async () => {
-  const endpoint = $("sync-endpoint").value.trim();
-  const key = $("sync-key").value.trim();
+$("sign-in").addEventListener("click", async () => {
+  const email = $("sync-email").value.trim();
+  const password = $("sync-password").value;
   const status = $("sync-status");
   status.dataset.state = "";
-  if (!endpoint.startsWith("https://") || key.length < 32) {
-    status.textContent = "Paste the HTTPS endpoint and device key from the platform.";
+  if (!email || !password) {
+    status.textContent = "Enter the email and password for your dashboard account.";
     status.dataset.state = "error";
     return;
   }
+  $("sign-in").disabled = true;
+  status.textContent = "Signing in…";
   try {
-    const origin = `${new URL(endpoint).origin}/*`;
-    const granted = await chrome.permissions.request({ origins: [origin] });
-    if (!granted) throw new Error("Network permission was not granted.");
-    await chrome.storage.local.set({ syncEndpoint: endpoint, syncKey: key });
-    status.textContent = "Connected. New replies will appear in your dashboard.";
-    status.dataset.state = "ok";
+    const config = await firebaseConfig();
+    const session = await signInWithPassword(config.apiKey, email, password);
+    await chrome.storage.local.set({ pfSession: session, pfEmail: email });
+    $("sync-password").value = "";
+    showSignedIn(email);
   } catch (error) {
-    status.textContent = error instanceof Error ? error.message : "Could not save the connection.";
+    status.textContent = error instanceof Error ? error.message : "Sign-in failed.";
     status.dataset.state = "error";
+  } finally {
+    $("sign-in").disabled = false;
   }
 });
+
+$("sign-out").addEventListener("click", async () => {
+  await chrome.storage.local.remove(["pfSession", "pfEmail"]);
+  showSignedOut("Signed out. Measurements stay on this device.");
+});
+
 $("auto").addEventListener("change", (e) => {
   chrome.storage.local.set({ autoDirections: e.target.checked });
 });

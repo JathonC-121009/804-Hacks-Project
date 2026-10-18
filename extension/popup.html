@@ -135,18 +135,19 @@
 
       <div class="enable-site">
         <h2>Account sync</h2>
-        <p class="toggle-note">Create a device key on the platform's Connections page. Only aggregate measurements are uploaded.</p>
-        <div class="sync-fields">
-          <label>Sync endpoint<input id="sync-endpoint" type="url" placeholder="https://…/ingestUsage"></label>
-          <label>Device key<input id="sync-key" type="password" placeholder="Paste device key"></label>
+        <p class="toggle-note">Sign in with your PromptFootprint account to send receipts to the dashboard and the leaderboard. Only aggregate measurements are uploaded.</p>
+        <div class="sync-fields" id="sync-form">
+          <label>Email<input id="sync-email" type="email" autocomplete="username" placeholder="you@example.com"></label>
+          <label>Password<input id="sync-password" type="password" autocomplete="current-password" placeholder="Account password"></label>
         </div>
-        <button id="save-sync" type="button">Connect to dashboard</button>
+        <button id="sign-in" type="button">Sign in and sync</button>
+        <button id="sign-out" type="button" hidden>Sign out</button>
         <p class="site-status" id="sync-status" aria-live="polite"></p>
       </div>
     </section>
 
     <p class="foot">Prompts and responses never leave the page. If account sync is connected, only counts, efficiency, findings, and resource ranges are uploaded.</p>
   </main>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
