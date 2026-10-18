@@ -10,3 +10,7 @@
 .week-grid>div{background:#0d1b2a;padding:16px}.week-grid span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6e8795}.week-grid strong{font-size:22px;letter-spacing:-.03em}
 .week-tip{color:#9fd8cf!important;font-size:13px!important;line-height:1.5}
 #model-result{white-space:pre-line}
+
+.advice-list{display:grid;gap:12px;margin-top:6px}.advice-item{padding:12px 14px;border:1px solid #263d4d;border-radius:9px;background:#081522}
+.advice-item strong{display:block;font-size:12px;color:#cfe2e0;margin-bottom:6px;font-weight:600}.advice-item p{margin:0 0 6px;color:#8ba0ac;font-size:12px;line-height:1.5}
+.advice-fix{color:#d8ff66!important}.advice-none{color:#8ba0ac;font-size:12px}

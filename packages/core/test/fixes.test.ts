@@ -1,3 +1,4 @@
+import { adviseOnPrompt } from "../src/advice.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -135,7 +136,8 @@ test("hard reasoning gets no length cap, because brevity costs accuracy there", 
   assert.equal(r.taskType, "reasoning");
   const directions = r.added.join(" ");
   assert.ok(!/at most \d+|bullet|only/i.test(directions), `unexpected cap: ${directions}`);
-  assert.ok(/no preamble|no recap/i.test(directions));
+  // No generic catch-all either: a line that ignores the prompt is not analysis.
+  assert.ok(!/no preamble/i.test(directions), `generic line: ${directions}`);
 });
 
 test("D4: the diff accounts for every sentence, and nothing is applied on its own", () => {
@@ -231,10 +233,10 @@ test("the heaviest waste types win, and the block stays short", () => {
   assert.ok(!r.added.some((l) => /disclaimer/i.test(l)), "the lightest waste should be dropped");
 });
 
-test("with no history at all, the directions still say something useful", () => {
+test("with no history, the rewrite adds nothing generic, and the advice says what this prompt lacks", () => {
   const r = rewritePrompt("Explain why my monstera is yellowing.");
-  assert.ok(r.added.length > 0);
-  assert.ok(/no preamble/i.test(r.added.join(" ")));
+  assert.ok(!/no preamble/i.test(r.added.join(" ")));
+  assert.ok(adviseOnPrompt("Explain why my monstera is yellowing.").some((a) => a.kind === "unbounded"));
 });
 
 test("the prompt itself earns a length direction when the task type has none", () => {

@@ -7,6 +7,7 @@ import {
   rewritePrompt,
   runFullAnalysis,
   suggestModel,
+  adviseOnPrompt,
   syncUsageEvent,
   type Config,
   type FullAnalysis,
@@ -374,6 +375,10 @@ async function analyze(): Promise<void> {
   el("analysis-empty").hidden = true;
   el("analysis-content").hidden = false;
   el("rewrite-result").textContent = rewrite.rewritten;
+  const advice = adviseOnPrompt(prompt);
+  el("advice-result").innerHTML = advice.length
+    ? advice.map((a) => `<div class="advice-item"><strong>${esc(a.quote)}</strong><p>${esc(a.why)}</p><p class="advice-fix">${esc(a.suggestion)}</p></div>`).join("")
+    : `<p class="advice-none">Nothing to change in how this prompt is written.</p>`;
   el("model-result").textContent = [
     suggestion.label,
     ...suggestion.recommendations.map((r) => `${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : " (name not yet checked)"}`),

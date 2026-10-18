@@ -96,7 +96,6 @@ const WASTE_DIRECTION: { type: FlagType; line: string }[] = [
  * covering the three commonest wastes: before we know anything about a user,
  * three separate lines would cost more tokens than the guess is worth.
  */
-const DEFAULT_DIRECTION = "No preamble, no closing offer, no recap.";
 
 /** A length direction the prompt itself earns. Only used when the task type has none. */
 function lengthDirectionFor(prompt: string): string | null {
@@ -160,11 +159,9 @@ function chooseDirections(
   const fromWaste = wasteDirections(profile, taskType, MAX_DIRECTIONS - lines.length);
   if (fromWaste.length > 0) {
     lines.push(...fromWaste);
-  } else if (weak && lines.length < MAX_DIRECTIONS) {
-    // Only a weak base needs the catch-all. A task direction that already says
-    // "only" has covered it, and repeating that costs tokens on every message.
-    lines.push(DEFAULT_DIRECTION);
   }
+  // No generic catch-all here. A line that says "no preamble" whatever the
+  // prompt is not analysis; the advice module says what this prompt needs.
 
   return lines.slice(0, MAX_DIRECTIONS);
 }
