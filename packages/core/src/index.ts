@@ -11,6 +11,7 @@ import type {
   TokenCounts,
   TokenSource,
   UsageEvent,
+  WasteProfile,
 } from "./types.ts";
 import { analyze } from "./detect.ts";
 import { auditConfig, newCollector, type ConfigWarning } from "./config.ts";
@@ -34,7 +35,7 @@ export {
 } from "./config.ts";
 export { energyDeltaPer1kOutput, estimate } from "./estimate.ts";
 export { buildInstructionBlock, INSTRUCTION_CAVEATS } from "./instructions.ts";
-export { detectTaskType, REWRITE_CAVEATS, rewritePrompt } from "./rewrite.ts";
+export { detectTaskType, REWRITE_CAVEATS, rewritePrompt, type RewriteOptions } from "./rewrite.ts";
 export { footprintDeltaForResponse, suggestModel } from "./suggestModel.ts";
 export {
   exampleSetHash,
@@ -97,6 +98,21 @@ export interface FullAnalysis {
   configWarnings: ConfigWarning[];
 }
 
+/**
+ * Flags -> wasted tokens per waste type.
+ *
+ * Advisory flags count here even though they never move the efficiency score:
+ * a recap is worth telling the model to stop producing, it just is not
+ * something we are willing to score someone on.
+ */
+export function wasteProfileOf(flags: Flag[]): WasteProfile {
+  const profile: WasteProfile = {};
+  for (const f of flags) {
+    profile[f.type] = (profile[f.type] ?? 0) + (f.tokens > 0 ? f.tokens : 1);
+  }
+  return profile;
+}
+
 export function runFullAnalysis(input: FullAnalysisInput, config: Config): FullAnalysis {
   const timestamp = input.timestamp ?? new Date().toISOString();
 
@@ -143,6 +159,9 @@ export function runFullAnalysis(input: FullAnalysisInput, config: Config): FullA
   const instructionBlock = buildInstructionBlock(analysis.flags, input.history ?? []);
   const rewrite = rewritePrompt(input.prompt, undefined, {
     checkedAgainstExamples: input.checkedAgainstExamples ?? false,
+    // The same waste that drives the instruction block drives the directions,
+    // so the two fixes on screen never tell the user different things.
+    wasteProfile: wasteProfileOf([...analysis.flags, ...(input.history ?? [])]),
   });
   const suggestion = suggestModel(input.prompt, config, input.assumedCurrentTier);
 

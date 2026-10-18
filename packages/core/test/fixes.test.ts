@@ -185,6 +185,74 @@ test("a verbose prompt genuinely shrinks", () => {
   assert.ok(r.tokenDelta < 0, `expected a shorter prompt, delta was ${r.tokenDelta}`);
 });
 
+test("D4: rewriting a rewrite is a no-op, so clicking trim twice cannot grow a prompt", () => {
+  const verbose =
+    "Hi there! I hope you're doing well. I was wondering if you could please explain " +
+    "why the leaves on my monstera are turning yellow. Thanks in advance for your help!";
+
+  const once = rewritePrompt(verbose);
+  const twice = rewritePrompt(once.rewritten);
+
+  assert.equal(twice.rewritten, once.rewritten, "a second pass must change nothing");
+  assert.equal(twice.added.length, 0, "directions already in the prompt must not be added again");
+  assert.equal(twice.tokenDelta, 0);
+
+  for (const line of once.added) {
+    const occurrences = once.rewritten.split(line).length - 1;
+    assert.equal(occurrences, 1, `"${line}" appears ${occurrences} times: ${once.rewritten}`);
+  }
+});
+
+test("a direction the user already wrote themselves is not repeated back at them", () => {
+  const base = rewritePrompt("Explain why my monstera is yellowing.");
+  const r = rewritePrompt(`Explain why my monstera is yellowing. ${base.added.join(" ")}`);
+  assert.equal(r.added.length, 0);
+  assert.ok(!r.diff.some((d) => d.op === "add"), "nothing to add means nothing added in the diff");
+});
+
+// --- fix 2b: the directions are chosen, not boilerplate ---------------------
+
+test("the directions follow the waste this user actually gets", () => {
+  const prompt = "Explain why my monstera is yellowing.";
+  const echoer = rewritePrompt(prompt, undefined, { wasteProfile: { echo: 300 } });
+  const rambler = rewritePrompt(prompt, undefined, { wasteProfile: { repetition: 300 } });
+
+  assert.ok(echoer.added.some((l) => /restate my question/i.test(l)), echoer.added.join(" | "));
+  assert.ok(rambler.added.some((l) => /same point twice/i.test(l)), rambler.added.join(" | "));
+  assert.notDeepEqual(echoer.added, rambler.added, "two different problems must not get the same advice");
+});
+
+test("the heaviest waste types win, and the block stays short", () => {
+  const r = rewritePrompt("Explain why my monstera is yellowing.", undefined, {
+    wasteProfile: { echo: 500, filler: 400, recap: 3, boilerplate: 1 },
+  });
+  assert.ok(r.added.length <= 3, `too many directions: ${r.added.length}`);
+  assert.ok(r.added.some((l) => /restate my question/i.test(l)));
+  assert.ok(!r.added.some((l) => /disclaimer/i.test(l)), "the lightest waste should be dropped");
+});
+
+test("with no history at all, the directions still say something useful", () => {
+  const r = rewritePrompt("Explain why my monstera is yellowing.");
+  assert.ok(r.added.length > 0);
+  assert.ok(/no preamble/i.test(r.added.join(" ")));
+});
+
+test("the prompt itself earns a length direction when the task type has none", () => {
+  const lookup = rewritePrompt("What is PUE?");
+  assert.ok(/one or two sentences/i.test(lookup.added.join(" ")), lookup.added.join(" | "));
+
+  // A task type with its own shape keeps it: "label only" beats any guess
+  // made from the wording of the question.
+  const classify = rewritePrompt("Classify the sentiment of this review: it was fine.");
+  assert.ok(/label only/i.test(classify.added.join(" ")));
+});
+
+test("a prompt carrying pasted text is told not to quote it back", () => {
+  const pasted = Array.from({ length: 80 }, (_, i) => `token${i}`).join(" ");
+  const r = rewritePrompt(`Summarize the email below.\n\n> ${pasted}`);
+  assert.ok(/do not quote the text above/i.test(r.added.join(" ")), r.added.join(" | "));
+});
+
 test("the rewrite never throws on any fixture prompt", () => {
   for (const f of FIXTURES) {
     const r = rewritePrompt(f.prompt);

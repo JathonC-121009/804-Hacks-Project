@@ -1,7 +1,17 @@
 // Plain JS on purpose: the popup stays usable without a second build target.
+//
+// It shows one thing — what this browser's AI replies have wasted — because a
+// popup people actually read beats a dashboard they scroll past.
+
 const $ = (id) => document.getElementById(id);
 
 const zeroRange = (unit) => ({ low: 0, high: 0, unit });
+
+const emptyResources = () => ({
+  energyWh: zeroRange("Wh"),
+  waterMl: zeroRange("mL"),
+  co2g: zeroRange("g"),
+});
 
 function sig(n) {
   if (n === 0) return "0";
@@ -9,6 +19,7 @@ function sig(n) {
   return String(Number(n.toPrecision(2)));
 }
 
+/** Auto-scale the unit so a reading of 0.0003 Wh reads as 0.3 mWh, not zeros. */
 function rescale(range) {
   const peak = Math.max(Math.abs(range.low), Math.abs(range.high));
   if (range.unit === "Wh" && peak > 0 && peak < 1) {
@@ -26,24 +37,10 @@ function rescale(range) {
   return range;
 }
 
+/** The only way a figure reaches the popup. Never prints a bare number. */
 function formatRange(range) {
-  const scaled = rescale(range);
-  return scaled.low === scaled.high
-    ? `${sig(scaled.low)} ${scaled.unit}`
-    : `${sig(scaled.low)}–${sig(scaled.high)} ${scaled.unit}`;
-}
-
-function renderResource(id, total, wasted) {
-  $(`${id}-total`).textContent = formatRange(total);
-  $(`${id}-wasted`).textContent = `${formatRange(wasted)} waste`;
-}
-
-function emptyResources() {
-  return {
-    energyWh: zeroRange("Wh"),
-    waterMl: zeroRange("mL"),
-    co2g: zeroRange("g"),
-  };
+  const r = rescale(range);
+  return r.low === r.high ? `${sig(r.low)} ${r.unit}` : `${sig(r.low)}–${sig(r.high)} ${r.unit}`;
 }
 
 function resourcesFromTokens(tokens, sources) {
@@ -67,6 +64,11 @@ function resourcesFromTokens(tokens, sources) {
   };
 }
 
+/**
+ * Earlier versions stored token counters only. Rebuild their resource ranges
+ * once so upgrading does not make the popup look empty. Safe to assume the
+ * large-model constants: every site config uses that class.
+ */
 async function migrateTokenOnlyHistory(total, wasted) {
   try {
     const response = await fetch(chrome.runtime.getURL("config/sources.json"));
@@ -81,44 +83,48 @@ async function migrateTokenOnlyHistory(total, wasted) {
   }
 }
 
+function renderWaste(resources) {
+  $("w-energy").textContent = formatRange(resources.energyWh);
+  $("w-water").textContent = formatRange(resources.waterMl);
+  $("w-co2").textContent = formatRange(resources.co2g);
+}
+
 chrome.storage.local.get(
-  ["wasted", "total", "replies", "resourcesTotal", "resourcesWasted"],
+  ["wasted", "total", "replies", "resourcesWasted"],
   (s) => {
-  const wasted = s.wasted ?? 0;
-  const total = s.total ?? 0;
-  let resourcesTotal = s.resourcesTotal ?? emptyResources();
-  let resourcesWasted = s.resourcesWasted ?? emptyResources();
+    const wasted = s.wasted ?? 0;
+    const total = s.total ?? 0;
+    const replies = s.replies ?? 0;
 
-  $("replies").textContent = String(s.replies ?? 0);
-  $("total").textContent = total.toLocaleString();
-  $("wasted").textContent = wasted.toLocaleString();
-  $("eff").textContent = total > 0 ? `${Math.round((1 - wasted / total) * 100)}%` : "—";
-  renderResource("energy", resourcesTotal.energyWh, resourcesWasted.energyWh);
-  renderResource("water", resourcesTotal.waterMl, resourcesWasted.waterMl);
-  renderResource("co2", resourcesTotal.co2g, resourcesWasted.co2g);
+    $("eff").textContent = total > 0 ? `${Math.round((1 - wasted / total) * 100)}%` : "—";
+    $("w-tokens").textContent = wasted.toLocaleString();
+    renderWaste(s.resourcesWasted ?? emptyResources());
 
-  if (total === 0) {
-    $("empty").hidden = false;
-    $("resource-grid").classList.add("is-empty");
-  } else if (!s.resourcesTotal || !s.resourcesWasted) {
-    // Earlier extension versions stored token counters only. Reconstruct their
-    // resource ranges once so an upgrade does not make the dashboard look empty.
-    void migrateTokenOnlyHistory(total, wasted).then((migrated) => {
-      if (!migrated) return;
-      resourcesTotal = migrated.resourcesTotal;
-      resourcesWasted = migrated.resourcesWasted;
-      renderResource("energy", resourcesTotal.energyWh, resourcesWasted.energyWh);
-      renderResource("water", resourcesTotal.waterMl, resourcesWasted.waterMl);
-      renderResource("co2", resourcesTotal.co2g, resourcesWasted.co2g);
-      chrome.storage.local.set(migrated);
-    });
-  }
+    if (total === 0) {
+      $("rows").classList.add("dim");
+      $("caption").textContent =
+        "No replies measured yet. Open ChatGPT or Claude with the extension on.";
+      return;
+    }
+
+    $("caption").textContent =
+      `${wasted.toLocaleString()} of ${total.toLocaleString()} output tokens across ` +
+      `${replies} ${replies === 1 ? "reply" : "replies"}. Estimated locally, shown as ranges.`;
+
+    if (!s.resourcesWasted) {
+      void migrateTokenOnlyHistory(total, wasted).then((migrated) => {
+        if (!migrated) return;
+        renderWaste(migrated.resourcesWasted);
+        chrome.storage.local.set(migrated);
+      });
+    }
   },
 );
 
 chrome.storage.local.get(["autoDirections"], (s) => {
   $("auto").checked = s.autoDirections === true;
 });
+
 $("auto").addEventListener("change", (e) => {
   chrome.storage.local.set({ autoDirections: e.target.checked });
 });
@@ -131,6 +137,9 @@ $("reset").addEventListener("click", () => {
       replies: 0,
       resourcesTotal: emptyResources(),
       resourcesWasted: emptyResources(),
+      // Also forget which waste types were seen, or the pre-send directions
+      // keep targeting problems whose evidence the user just cleared.
+      wasteByType: {},
     },
     () => location.reload(),
   );

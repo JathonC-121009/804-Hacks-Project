@@ -1,4 +1,4 @@
-import type { DiffOp, Removal, RewriteResult, TaskType } from "./types.ts";
+import type { DiffOp, FlagType, Removal, RewriteResult, TaskType, WasteProfile } from "./types.ts";
 import { countWords, jaccard, normalize, splitSentences } from "./text.ts";
 import { estimateTokens } from "./tokens.ts";
 
@@ -40,22 +40,134 @@ export function detectTaskType(prompt: string): TaskType {
 // --- output directions ------------------------------------------------------
 
 /**
- * The directions appended per task type. These are where the energy saving is.
+ * The directions appended to a prompt. These are where the energy saving is,
+ * so they are chosen rather than boilerplate: a generic line the user reads
+ * once and stops seeing saves nothing.
+ *
+ * Three inputs decide them, in this order:
+ *   1. the task type       - what shape the answer should take;
+ *   2. the prompt itself   - a definition question wants two sentences, a
+ *                            prompt with pasted text invites it to be quoted back;
+ *   3. the user's waste    - the types their replies actually waste tokens on.
+ *
+ * Capped at three lines. They are sent as input on every message, so a long
+ * block spends tokens forever to save them once.
+ */
+
+/**
+ * The shape of the answer, per task type.
  *
  * Note `reasoning` deliberately gets no length cap. Capping length on hard
  * reasoning is exactly where brevity costs accuracy, and claiming a saving
  * there would be the kind of overclaim the plan's risk table warns about.
  */
-const OUTPUT_DIRECTIONS: Record<TaskType, string[]> = {
-  classify: ["Reply with the label only, nothing else."],
-  extract: ["Reply with the extracted values only, one per line. No commentary."],
-  translate: ["Reply with the translation only."],
-  summarize: ["Reply with at most 5 bullet points. No preamble, no closing line."],
-  rewrite: ["Reply with the rewritten text only."],
-  code: ["Reply with the code and at most one line of explanation. No preamble."],
-  reasoning: ["Answer directly. No preamble and no recap at the end."],
-  general: ["Answer directly. No preamble, no closing offer, no recap."],
+const TASK_DIRECTION: Record<TaskType, string> = {
+  classify: "Reply with the label only, nothing else.",
+  extract: "Reply with the extracted values only, one per line. No commentary.",
+  translate: "Reply with the translation only.",
+  summarize: "Reply with at most 5 bullet points. No preamble, no closing line.",
+  rewrite: "Reply with the rewritten text only.",
+  code: "Reply with the code and at most one line of explanation. No preamble.",
+  reasoning: "Answer directly.",
+  general: "Answer directly.",
 };
+
+/** Task types whose direction says nothing about length, so the prompt may. */
+const WEAK_BASE: TaskType[] = ["general", "reasoning"];
+
+const MAX_DIRECTIONS = 3;
+
+/**
+ * One line per waste type, matching the standing instruction block in
+ * instructions.ts. The two fixes have to agree: a user told one thing before
+ * sending and a different thing afterwards stops trusting both.
+ */
+const WASTE_DIRECTION: { type: FlagType; line: string }[] = [
+  { type: "echo", line: "Do not restate my question." },
+  { type: "filler", line: "No greeting and no closing offer of more help." },
+  { type: "repetition", line: "Do not make the same point twice." },
+  { type: "recap", line: "No recap or summary at the end." },
+  { type: "boilerplate", line: "Skip standard disclaimers." },
+  { type: "overlength", line: "Keep it as short as the question allows." },
+];
+
+/**
+ * Used when no waste has been recorded yet. Deliberately one compact sentence
+ * covering the three commonest wastes: before we know anything about a user,
+ * three separate lines would cost more tokens than the guess is worth.
+ */
+const DEFAULT_DIRECTION = "No preamble, no closing offer, no recap.";
+
+/** A length direction the prompt itself earns. Only used when the task type has none. */
+function lengthDirectionFor(prompt: string): string | null {
+  if (/\b(?:what(?:'s| is)|who(?:'s| is)|define|when (?:was|did)|how do you spell)\b/i.test(prompt)) {
+    return "Answer in one or two sentences.";
+  }
+  if (/\b(?:list|name|give me)\b[^.?!]{0,40}\b(?:\d+|a few|some)\b/i.test(prompt)) {
+    return "Bullets only, no introduction.";
+  }
+  if (/\b(?:yes or no|is it true|should i)\b/i.test(prompt)) {
+    return "Start with a one-word answer, then at most two sentences.";
+  }
+  return null;
+}
+
+/**
+ * Waste types a task direction already rules out.
+ *
+ * "Reply with the label only" has said everything "no greeting" would. Saying
+ * both wastes input tokens on every message and reads like the repetition this
+ * product exists to flag.
+ */
+const COVERED_BY_TASK: Partial<Record<TaskType, FlagType[]>> = {
+  classify: ["echo", "filler", "recap", "boilerplate", "overlength"],
+  extract: ["echo", "filler", "recap", "boilerplate", "overlength"],
+  translate: ["echo", "filler", "recap", "boilerplate", "overlength"],
+  rewrite: ["echo", "filler", "recap", "boilerplate", "overlength"],
+  summarize: ["filler", "recap", "overlength"],
+  code: ["filler", "recap", "overlength"],
+};
+
+/** Waste lines for the types this user wastes most on, heaviest first. */
+function wasteDirections(
+  profile: WasteProfile | undefined,
+  taskType: TaskType,
+  limit: number,
+): string[] {
+  if (!profile || limit <= 0) return [];
+  const covered = COVERED_BY_TASK[taskType] ?? [];
+  const ranked = WASTE_DIRECTION.filter(
+    (w) => (profile[w.type] ?? 0) > 0 && !covered.includes(w.type),
+  ).sort((a, b) => (profile[b.type] ?? 0) - (profile[a.type] ?? 0));
+  return ranked.slice(0, limit).map((w) => w.line);
+}
+
+function chooseDirections(
+  prompt: string,
+  taskType: TaskType,
+  hasPastedContext: boolean,
+  profile: WasteProfile | undefined,
+): string[] {
+  const weak = WEAK_BASE.includes(taskType);
+  const length = weak ? lengthDirectionFor(prompt) : null;
+
+  // A length direction earned by the prompt beats a bare "Answer directly",
+  // which it already implies.
+  const lines: string[] = [length ?? TASK_DIRECTION[taskType]];
+
+  if (hasPastedContext) lines.push("Do not quote the text above back to me.");
+
+  const fromWaste = wasteDirections(profile, taskType, MAX_DIRECTIONS - lines.length);
+  if (fromWaste.length > 0) {
+    lines.push(...fromWaste);
+  } else if (weak && lines.length < MAX_DIRECTIONS) {
+    // Only a weak base needs the catch-all. A task direction that already says
+    // "only" has covered it, and repeating that costs tokens on every message.
+    lines.push(DEFAULT_DIRECTION);
+  }
+
+  return lines.slice(0, MAX_DIRECTIONS);
+}
 
 // --- politeness stripping ---------------------------------------------------
 
@@ -149,10 +261,16 @@ function findPastedContext(prompt: string): RewriteResult["flaggedContext"] {
 
 // --- rewrite ----------------------------------------------------------------
 
+export interface RewriteOptions {
+  checkedAgainstExamples?: boolean;
+  /** What this user's replies actually waste tokens on. Shapes the directions. */
+  wasteProfile?: WasteProfile;
+}
+
 export function rewritePrompt(
   prompt: string,
   taskTypeOverride?: TaskType,
-  opts: { checkedAgainstExamples?: boolean } = {},
+  opts: RewriteOptions = {},
 ): RewriteResult {
   const taskType = taskTypeOverride ?? detectTaskType(prompt);
   const sentences = splitSentences(prompt);
@@ -215,7 +333,21 @@ export function rewritePrompt(
     keptTexts.push(text);
   }
 
-  const added = OUTPUT_DIRECTIONS[taskType];
+  const flaggedContext = findPastedContext(prompt);
+
+  // Only add a direction the prompt does not already carry.
+  //
+  // Without this the rewrite is not idempotent: run it on its own output and it
+  // appends the same line again, so a user who clicks "trim" twice watches
+  // their prompt grow instead of shrink. It also means a user who already
+  // writes "answer directly" themselves is not told to say it twice.
+  const haystack = ` ${normalize(keptTexts.join(" "))} `;
+  const added = chooseDirections(
+    prompt,
+    taskType,
+    flaggedContext.length > 0,
+    opts.wasteProfile,
+  ).filter((line) => !haystack.includes(` ${normalize(line)} `));
   for (const line of added) diff.push({ op: "add", text: line });
 
   const rewritten = [...keptTexts, ...added].join(" ").trim();
@@ -229,7 +361,7 @@ export function rewritePrompt(
     tokenDelta,
     removed,
     added: [...added],
-    flaggedContext: findPastedContext(prompt),
+    flaggedContext,
     checkedAgainstExamples: opts.checkedAgainstExamples ?? false,
   };
 }

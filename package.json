@@ -11,7 +11,7 @@
     "dev": "node scripts/serve.ts",
     "test": "node --test packages/core/test/*.test.ts",
     "seed": "node scripts/seed_demo.ts",
-    "grid": "node scripts/fetch_grid.ts",
+    "grid": "node --env-file-if-exists=.env scripts/fetch_grid.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "npm test && npm run typecheck",
     "build:ext": "bash scripts/build-ext.sh",

@@ -259,6 +259,15 @@ export type TaskType =
 
 export type DiffOp = { op: "keep" | "remove" | "add"; text: string };
 
+/**
+ * Wasted tokens seen so far, by waste type.
+ *
+ * Passed into a rewrite so the directions it appends match the waste this user
+ * actually gets, instead of the same generic line every time. Counts only: no
+ * prompt or response text is involved, so this can be stored and shared.
+ */
+export type WasteProfile = Partial<Record<FlagType, number>>;
+
 export interface Removal {
   text: string;
   why: string;
