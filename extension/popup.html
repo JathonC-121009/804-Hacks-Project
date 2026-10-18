@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Output-Waste Optimizer</title>
+<style>
+  body { width: 268px; margin: 0; padding: 15px;
+         font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #fff; color: #16191d; }
+  @media (prefers-color-scheme: dark) { body { background: #1c2024; color: #eceef0; } }
+  h1 { margin: 0 0 3px; font-size: 14px; letter-spacing: -0.01em; }
+  .sub { margin: 0 0 13px; font-size: 11px; opacity: 0.65; }
+  .score { font-size: 34px; font-weight: 700; color: #1d5f4a; line-height: 1; letter-spacing: -0.03em; }
+  @media (prefers-color-scheme: dark) { .score { color: #5fc3a3; } }
+  .score-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; margin-top: 3px; }
+  .rows { margin-top: 13px; display: grid; gap: 5px; }
+  .row { display: flex; justify-content: space-between; font-size: 12px; }
+  .row span:first-child { opacity: 0.65; }
+  .foot { margin-top: 13px; padding-top: 10px; border-top: 1px solid rgba(127,127,127,0.25);
+          font-size: 10.5px; opacity: 0.6; }
+  .toggle { display:flex; gap:7px; align-items:center; margin-top:13px; padding-top:11px;
+            border-top:1px solid rgba(127,127,127,0.25); font-size:12px; cursor:pointer; }
+  .toggle input { margin:0; }
+  .toggle-note { margin:5px 0 0; font-size:10.5px; line-height:1.45; opacity:0.6; }
+  button { width: 100%; margin-top: 10px; padding: 6px; font: inherit; font-size: 12px;
+           cursor: pointer; border-radius: 6px; border: 1px solid rgba(127,127,127,0.3);
+           background: transparent; color: inherit; }
+</style>
+</head>
+<body>
+  <h1>Output-Waste Optimizer</h1>
+  <p class="sub">This browser only. Counts, never text.</p>
+  <div class="score" id="eff">&mdash;</div>
+  <div class="score-label">output efficiency</div>
+  <div class="rows">
+    <div class="row"><span>Replies measured</span><b id="replies">0</b></div>
+    <div class="row"><span>Output tokens</span><b id="total">0</b></div>
+    <div class="row"><span>Wasted tokens</span><b id="wasted">0</b></div>
+  </div>
+  <label class="toggle">
+    <input type="checkbox" id="auto">
+    <span>Auto-add output limits</span>
+  </label>
+  <p class="toggle-note">
+    Appends "answer directly, no recap" to your prompt as you type, visibly, with undo.
+    Never trims your own words &mdash; that stays one click, because silently dropping
+    context you needed is worse than the tokens it saves.
+  </p>
+  <button id="reset">Reset counters</button>
+  <p class="foot">Energy figures come from unverified placeholders until config/sources.json is filled in. Nothing here is uploaded.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

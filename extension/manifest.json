@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Output-Waste Optimizer",
+  "version": "0.1.0",
+  "description": "Catches wasteful AI output before you send, and shows what each reply cost in energy, water and CO2. All local.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["loader.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/*", "config/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ]
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Output-Waste Optimizer" }
+}

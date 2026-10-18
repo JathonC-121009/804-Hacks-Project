@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Chat &mdash; extension test harness</title>
+<style>
+  :root { --bg:#f6f7f9; --surface:#fff; --ink:#16191d; --ink2:#5a626b; --line:#e0e4e9; --accent:#1d5f4a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --surface:#1c2024; --ink:#eceef0; --ink2:#aab2ba; --line:#2f353b; --accent:#5fc3a3; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 18px 140px; }
+  .banner { background:#fdf3e0; border:1px solid #e8c98a; color:#8a5a00;
+            border-radius:10px; padding:10px 13px; font-size:13px; margin-bottom:18px; }
+  @media (prefers-color-scheme: dark) { .banner { background:#2a2317; border-color:#5c4a24; color:#e5b765; } }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .hint { color: var(--ink2); font-size: 13px; margin: 0 0 18px; }
+  .mock-msg { display:flex; gap:11px; margin-bottom:18px; }
+  .mock-msg .who { flex:none; width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+                   font-size:11px; font-weight:700; background:var(--line); color:var(--ink2); }
+  .mock-msg.assistant .who { background:var(--accent); color:var(--bg); }
+  .mock-body { flex:1; min-width:0; background:var(--surface); border:1px solid var(--line);
+               border-radius:12px; padding:12px 14px; }
+  .mock-body p { margin: 0 0 9px; } .mock-body p:last-child { margin-bottom: 0; }
+  .composer { position:fixed; left:0; right:0; bottom:0; background:var(--surface);
+              border-top:1px solid var(--line); padding:14px 18px; }
+  .composer-inner { max-width:760px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; }
+  #mock-composer { flex:1; min-height:52px; max-height:180px; overflow:auto; padding:11px 13px;
+                   border:1px solid var(--line); border-radius:11px; background:var(--bg);
+                   font:inherit; color:inherit; outline:none; }
+  #mock-composer:focus { border-color:var(--accent); }
+  #mock-composer:empty::before { content:attr(data-placeholder); color:var(--ink2); }
+  button { font:inherit; font-weight:600; cursor:pointer; border:none; border-radius:9px;
+           padding:11px 18px; background:var(--accent); color:var(--bg); }
+  .seed { font-size:12.5px; background:transparent; color:var(--ink2);
+          border:1px solid var(--line); padding:5px 11px; border-radius:999px; font-weight:500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner">
+    <b>Test harness, not a real chat.</b> Nothing here calls a model. It exists so the extension can be
+    demonstrated and debugged without depending on a third-party site's markup, which changes without warning.
+  </div>
+
+  <h1>Mock Chat</h1>
+  <p class="hint">
+    Load the unpacked extension, then: paste a bloated prompt below and pause &mdash; the pre-send nudge
+    should appear above the box. Press Send and a deliberately wasteful reply arrives, which should get a receipt.
+  </p>
+
+  <p><button class="seed" id="seed-bloated">Fill a bloated prompt</button></p>
+
+  <div id="mock-thread"></div>
+</div>
+
+<div class="composer">
+  <div class="composer-inner">
+    <div id="mock-composer" contenteditable="true" data-placeholder="Type a message&hellip;"></div>
+    <button id="mock-send">Send</button>
+  </div>
+</div>
+
+<script>
+// Canned replies, chosen to exercise different detectors. No model is called.
+const REPLIES = [
+  `Great question! You asked why the leaves on your monstera are turning yellow. Nine times out of ten this is overwatering: the roots sit in wet soil, they cannot take up oxygen, and the oldest leaves yellow first. Check that the pot actually drains and let the top two inches dry out before watering again. In summary, it is almost always overwatering. I hope this helps! Let me know if you have any other questions.`,
+  `Certainly! To answer your question about data centre water use, published figures for large facilities range from a few hundred thousand to several million gallons a day, depending on the cooling design and the local climate. Published figures for large facilities range from a few hundred thousand to several million gallons a day, depending on the cooling design and the local climate. I hope that helps! Feel free to ask if you want me to cover closed-loop cooling too.`,
+  `Open evaporative systems are the most water-hungry but very energy efficient. Closed-loop systems recirculate the same fluid and use almost no fresh water. Air cooling avoids water entirely at much higher electricity cost.`,
+];
+let next = 0;
+
+const thread = document.getElementById('mock-thread');
+const composer = document.getElementById('mock-composer');
+
+function add(role, text) {
+  const row = document.createElement('div');
+  row.className = `mock-msg ${role}`;
+  const body = document.createElement('div');
+  body.className = 'mock-body';
+  for (const para of text.split('\n\n')) {
+    const p = document.createElement('p');
+    p.textContent = para;
+    body.appendChild(p);
+  }
+  row.innerHTML = `<div class="who">${role === 'user' ? 'You' : 'AI'}</div>`;
+  row.appendChild(body);
+  thread.appendChild(row);
+  row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+document.getElementById('mock-send').addEventListener('click', () => {
+  const text = composer.innerText.trim();
+  if (!text) return;
+  add('user', text);
+  composer.innerHTML = '';
+  // Delay so the reply lands as a separate mutation, like a real stream.
+  setTimeout(() => { add('assistant', REPLIES[next % REPLIES.length]); next++; }, 600);
+});
+
+document.getElementById('seed-bloated').addEventListener('click', () => {
+  composer.innerText =
+    "Hi there! I hope you're doing well. I was wondering if you could please explain why the leaves " +
+    "on my monstera are turning yellow. Please explain why the leaves on my monstera are turning yellow. " +
+    "Thanks in advance for your help!";
+  composer.focus();
+  composer.dispatchEvent(new InputEvent('input', { bubbles: true }));
+});
+</script>
+</body>
+</html>

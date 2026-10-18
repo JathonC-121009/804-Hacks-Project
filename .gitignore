@@ -9,3 +9,7 @@ node_modules/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Extension build output. Regenerate with: npm run build:ext
+extension/dist/
+extension/config/
