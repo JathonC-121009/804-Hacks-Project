@@ -12,9 +12,9 @@
  *   2. reply receipt   - when an answer finishes, show what it cost and which
  *                        parts of it were waste.
  *
- * Privacy, which is also the pitch: every byte of analysis happens here. No
- * prompt or response text is stored or transmitted. Only counts reach
- * chrome.storage, and nothing reaches the network at all.
+ * Privacy, which is also the pitch: every byte of text analysis happens here.
+ * Prompt and response text are never stored or transmitted. Aggregate counts
+ * stay local unless the user explicitly connects account sync.
  */
 
 import type { Config, Estimate, Flag, ModelClass, Range } from "../../packages/core/src/index.ts";
@@ -22,8 +22,11 @@ import {
   analyze,
   buildInstructionBlock,
   estimate,
+  estimateTokens,
   rewritePrompt,
+  sendSyncUsageEvent,
   suggestModel,
+  syncUsageEvent,
 } from "../../packages/core/src/index.ts";
 import { pick, pickAll, readComposer, siteFor, type SiteConfig } from "./sites.ts";
 
@@ -44,11 +47,15 @@ let config: Config | null = null;
  * tokens are not worth being the invisible cause of a bad answer.
  */
 let autoDirections = false;
+let syncEndpoint = "";
+let syncKey = "";
 
 function loadSettings(): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage?.local.get(["autoDirections"], (s) => {
+    chrome.storage?.local.get(["autoDirections", "syncEndpoint", "syncKey"], (s) => {
       autoDirections = s["autoDirections"] === true;
+      syncEndpoint = typeof s["syncEndpoint"] === "string" ? s["syncEndpoint"] : "";
+      syncKey = typeof s["syncKey"] === "string" ? s["syncKey"] : "";
       resolve();
     });
   });
@@ -69,6 +76,8 @@ async function boot(): Promise<void> {
   await loadSettings();
   chrome.storage?.onChanged?.addListener((changes) => {
     if (changes["autoDirections"]) autoDirections = changes["autoDirections"].newValue === true;
+    if (changes["syncEndpoint"]) syncEndpoint = changes["syncEndpoint"].newValue ?? "";
+    if (changes["syncKey"]) syncKey = changes["syncKey"].newValue ?? "";
   });
   installProbe();
   watchComposer();
@@ -439,6 +448,38 @@ function attachReceipt(msg: HTMLElement, response: string, prompt: string): void
 
   msg.appendChild(bar);
   bumpTotals(result.wastedOutputTokens, result.totalOutputTokens, est);
+  void syncReceipt(prompt, result, est, modelClass);
+}
+
+async function syncReceipt(
+  prompt: string,
+  result: ReturnType<typeof analyze>,
+  est: Estimate,
+  modelClass: ModelClass,
+): Promise<void> {
+  if (!syncEndpoint || !syncKey) return;
+  const event = syncUsageEvent({
+    surface: "web",
+    tool: site.id,
+    modelClass,
+    tokens: {
+      input: estimateTokens(prompt).tokens,
+      output: result.totalOutputTokens,
+      reasoning: 0,
+      cache_read: 0,
+      cache_write: 0,
+    },
+    totalOutputTokens: result.totalOutputTokens,
+    wastedOutputTokens: result.wastedOutputTokens,
+    efficiency: result.efficiency,
+    flags: result.flags,
+    estimate: est,
+  });
+  try {
+    await sendSyncUsageEvent(syncEndpoint, syncKey, event);
+  } catch (error) {
+    console.warn("[PromptFootprint] Account sync failed; local tracking still succeeded.", error);
+  }
 }
 
 const LABELS: Record<Flag["type"], string> = {

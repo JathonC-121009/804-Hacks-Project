@@ -16,7 +16,7 @@ Full scope, sources and open decisions: [`docs/output-waste-optimizer-plan.md`](
 
 ## Run it
 
-The portal needs **Node 22.13+** and nothing else. No install or build step is required for the portal.
+The project needs **Node 22.13+**. The analysis engine still runs locally; accounts and aggregate usage history use Firebase Authentication, Firestore, and one HTTPS ingestion function.
 
 ```bash
 npm run dev
@@ -28,13 +28,28 @@ Then open <http://127.0.0.1:5173/>.
 |---|---|
 | `npm run dev` | Serves the portal at :5173 |
 | `npm run cli -- --help` | Runs the provider-neutral terminal optimizer |
-| `npm test` | 103 tests, including the acceptance criteria from the plan |
+| `npm test` | Runs the core, CLI, and privacy-contract tests |
 | `npm run seed` | Regenerates the demo data in `data/` (run it the morning of the event so dates look current) |
 | `npm run grid` | Fetches real PJM grid data — needs `EIA_API_KEY` |
 | `npm run typecheck` | Full type check — needs `npm install` |
 | `npm run build:ext` | Builds the browser extension into `extension/dist/` — needs `npm install` |
+| `npm run build:web` | Builds the static Firebase Hosting site into `dist/web/` |
+| `npm run firebase:install` | Installs the Cloud Function dependencies |
+| `npm run firebase:deploy` | Deploys Firestore rules and the ingestion function |
 
-### Why there's no build step
+### Connect Firebase
+
+1. Create a Firebase project and add a Web app.
+2. In Firebase Authentication, enable **Email/Password** sign-in.
+3. Create a Firestore database.
+4. Copy `config/firebase.example.json` to `config/firebase.json` and fill in the Web app values. Set `functionsBaseUrl` to `https://us-central1-PROJECT_ID.cloudfunctions.net`.
+5. Run `npx firebase-tools login`, then `npx firebase-tools use --add` and select the project.
+6. Run `npm run firebase:install && npm run firebase:deploy`. This builds and deploys Hosting, Firestore rules, and the ingestion function.
+7. Open the `web.app` URL printed by Firebase, create an account, and open **Connections** to create a device key. Use `npm run dev` for local development.
+
+Firebase Web configuration is not an admin secret. Never put a service-account private key in this repository. Firestore rules isolate each account, and device keys are stored only as SHA-256 hashes.
+
+### Why the portal has no build step
 
 The demo gets one chance to run, on conference wifi, possibly on a different machine. A build is a thing that can fail at 7:55am. Node 22 strips TypeScript types itself, so the tests run `.ts` directly and [`scripts/serve.ts`](scripts/serve.ts) strips types on the fly for the browser. The browser runs the same source the tests do, with no artefact in between.
 
@@ -56,7 +71,7 @@ Demo core (D1–D9 in the plan) — all working, all tested:
 | D8 | Grid feed with cache and labelled fallback |
 | D9 | Weekly efficiency card |
 
-The browser extension is also built. It has dedicated support for ChatGPT, Claude, Gemini, Perplexity, Microsoft Copilot, Grok, Poe, DeepSeek, Mistral Le Chat, Meta AI, and You.com. For another browser-based AI tool, open its chat page and choose **Enable on this AI site** in the extension popup; access is requested only for that site.
+The browser extension has dedicated support for ChatGPT, Claude, Gemini, Perplexity, Microsoft Copilot, Grok, Poe, DeepSeek, Mistral Le Chat, Meta AI, and You.com. For another browser-based AI tool, open its chat page and choose **Enable on this AI site** in the extension popup. To add its aggregate measurements to the platform, paste a device endpoint and key from the platform's **Connections** page into the popup.
 
 The CLI's `run` command fixes the prompt **before** it reaches a terminal AI, automatically adds a concise output instruction, recommends a model tier, runs the AI, and analyzes the answer. It works with any tool that accepts its prompt as the final argument:
 
@@ -84,6 +99,14 @@ node apps/cli/index.ts analyze -p "Summarize this" -r "Great question..." \
 ```
 
 The AI provider still receives the optimized prompt, but PromptFootprint's rewrite, suggestion, and waste analysis all stay local. The original AI answer stays on stdout so it can still be piped or redirected; PromptFootprint's preflight and report go to stderr.
+
+Link the terminal once; later `run` and `analyze` commands sync automatically:
+
+```bash
+promptfootprint link --endpoint "https://us-central1-PROJECT.cloudfunctions.net/ingestUsage" --key "DEVICE_KEY"
+```
+
+The platform's **Connections** page generates the exact command. It is stored in `~/.promptfootprint/config.json` with owner-only permissions.
 
 **Not built, by choice:** CLI log reader (Tier 2), leaderboard (Tier 3), and carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
 
@@ -120,8 +143,10 @@ packages/core/src/     The engine. Pure functions, no I/O, no network.
   gate.ts              the quality gate (plan §7)
   grid.ts              PJM carbon intensity
   card.ts              weekly card
-packages/core/test/    103 tests; fixtures.ts holds the 20 labelled pairs
-apps/portal/           the paste-in analyzer
+packages/core/test/    Core, CLI, gate, and sync privacy tests
+apps/portal/           Account dashboard, trends, connections, and universal analyzer
+firebase/functions/    Device-key ingestion endpoint
+firestore.rules        Per-account event isolation and device-key rules
 config/                sources.json — every figure with its source
 data/                  seeded demo data, all labelled as such
 scripts/               serve, seed, fetch_grid
@@ -135,7 +160,7 @@ These are in the plan and enforced in the code, not just written down:
 
 1. **Never invent a number.** Every figure comes from `config/sources.json`. A source with no value yet throws `UnsourcedValueError` rather than silently becoming zero.
 2. **Estimates are ranges.** `formatRange()` is the only path to the screen and will not print a bare number.
-3. **Nothing leaves the device.** No network calls from the portal except loading its own files. No network tokenizer.
+3. **Conversation text stays on the device.** Analysis is local. When account sync is connected, only token counts, efficiency, finding types, tool name, and resource ranges are uploaded—never prompts, responses, excerpts, or highlighted text.
 4. **Automatic fixes are opt-in.** `analyze` and the browser UI only show changes. The CLI applies a rewrite only when the user explicitly invokes `run`; model changes remain suggestions because provider flags are not universal.
 5. **Demo data says it's demo data.** Seeded grid rows use `source: "seeded"`, never `"eia"`. Gate runs from recorded outputs are tagged `runner_kind: "recorded"` and the UI prints it.
 6. **Precision over recall.** Only high-confidence flags affect the score; fuzzy signals are advisory and never counted.

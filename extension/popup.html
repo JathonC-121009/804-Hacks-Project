@@ -59,6 +59,9 @@
   .site-status { min-height: 1.45em; margin: 6px 0 0; color: var(--muted); font-size: 10px; }
   .site-status[data-state="ok"] { color: var(--accent); }
   .site-status[data-state="error"] { color: #9b3d42; }
+  .sync-fields { display: grid; gap: 7px; margin-top: 9px; }
+  .sync-fields label { display: grid; gap: 3px; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .sync-fields input { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 10px; }
   .foot { padding-top: 11px; border-top: 1px solid var(--line); }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #151a17; --surface: #202722; --ink: #edf1ee; --muted: #9da9a2; --line: #343e38; --accent: #69c3a2; --accent-soft: #233b32; }
@@ -69,9 +72,9 @@
 <body>
   <main>
     <header>
-      <p class="eyebrow">Local usage ledger</p>
+      <p class="eyebrow">Unified usage ledger</p>
       <h1>Output-Waste Optimizer</h1>
-      <p class="sub">This browser only. Aggregate counts, never your text.</p>
+      <p class="sub">Aggregate counts, never your conversation text.</p>
     </header>
 
     <section class="summary" aria-label="Token summary">
@@ -129,9 +132,20 @@
         <button id="enable-site" type="button">Enable on this AI site</button>
         <p class="site-status" id="site-status" aria-live="polite"></p>
       </div>
+
+      <div class="enable-site">
+        <h2>Account sync</h2>
+        <p class="toggle-note">Create a device key on the platform's Connections page. Only aggregate measurements are uploaded.</p>
+        <div class="sync-fields">
+          <label>Sync endpoint<input id="sync-endpoint" type="url" placeholder="https://…/ingestUsage"></label>
+          <label>Device key<input id="sync-key" type="password" placeholder="Paste device key"></label>
+        </div>
+        <button id="save-sync" type="button">Connect to dashboard</button>
+        <p class="site-status" id="sync-status" aria-live="polite"></p>
+      </div>
     </section>
 
-    <p class="foot">Energy uses the configured model-class range. Water and CO₂ derive from that energy using the configured US water-intensity range and PJM fallback grid range. Nothing here is uploaded.</p>
+    <p class="foot">Prompts and responses never leave the page. If account sync is connected, only counts, efficiency, findings, and resource ranges are uploaded.</p>
   </main>
   <script src="popup.js"></script>
 </body>

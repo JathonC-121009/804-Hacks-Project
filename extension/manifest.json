@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Output-Waste Optimizer",
   "version": "0.1.0",
-  "description": "Catches wasteful AI output before you send, and shows what each reply cost in energy, water and CO2. All local.",
+  "description": "Improves prompts before you send and tracks aggregate AI efficiency across tools without uploading conversation text.",
   "permissions": ["storage", "activeTab", "scripting"],
   "optional_host_permissions": ["https://*/*"],
   "host_permissions": [

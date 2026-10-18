@@ -13,3 +13,6 @@ Thumbs.db
 # Extension build output. Regenerate with: npm run build:ext
 extension/dist/
 extension/config/
+
+# Firebase Hosting build output. Regenerate with: npm run build:web
+dist/

@@ -135,6 +135,35 @@ chrome.storage.local.get(
 chrome.storage.local.get(["autoDirections"], (s) => {
   $("auto").checked = s.autoDirections === true;
 });
+
+chrome.storage.local.get(["syncEndpoint", "syncKey"], (s) => {
+  $("sync-endpoint").value = s.syncEndpoint ?? "";
+  $("sync-key").value = s.syncKey ?? "";
+  if (s.syncEndpoint && s.syncKey) $("sync-status").textContent = "Connected. New replies sync automatically.";
+});
+
+$("save-sync").addEventListener("click", async () => {
+  const endpoint = $("sync-endpoint").value.trim();
+  const key = $("sync-key").value.trim();
+  const status = $("sync-status");
+  status.dataset.state = "";
+  if (!endpoint.startsWith("https://") || key.length < 32) {
+    status.textContent = "Paste the HTTPS endpoint and device key from the platform.";
+    status.dataset.state = "error";
+    return;
+  }
+  try {
+    const origin = `${new URL(endpoint).origin}/*`;
+    const granted = await chrome.permissions.request({ origins: [origin] });
+    if (!granted) throw new Error("Network permission was not granted.");
+    await chrome.storage.local.set({ syncEndpoint: endpoint, syncKey: key });
+    status.textContent = "Connected. New replies will appear in your dashboard.";
+    status.dataset.state = "ok";
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Could not save the connection.";
+    status.dataset.state = "error";
+  }
+});
 $("auto").addEventListener("change", (e) => {
   chrome.storage.local.set({ autoDirections: e.target.checked });
 });

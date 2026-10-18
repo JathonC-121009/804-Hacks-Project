@@ -59,6 +59,13 @@ export {
 export { DEFAULT_BASELINE, describeBaseline, efficiencyOf, weeklyCard, wastedTokensOf } from "./card.ts";
 export { emptyTokenCounts, estimateTokens, outputTokens, totalTokens } from "./tokens.ts";
 export { countWords, mergeIntervals, splitSentences, stableHash } from "./text.ts";
+export {
+  SYNC_EVENT_VERSION,
+  sendSyncUsageEvent,
+  syncUsageEvent,
+  type SyncEventInput,
+  type SyncUsageEvent,
+} from "./sync.ts";
 
 /**
  * One call that produces everything the paste-in analyzer shows.

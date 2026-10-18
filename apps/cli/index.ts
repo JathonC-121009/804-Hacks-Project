@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -9,6 +11,8 @@ import {
   runFullAnalysis,
   suggestModel,
   estimateTokens,
+  sendSyncUsageEvent,
+  syncUsageEvent,
   type Config,
   type FullAnalysis,
   type GridData,
@@ -39,6 +43,7 @@ Usage:
   npm run cli -- analyze --prompt "..." --response "..."
   npm run cli -- rewrite --prompt "..."
   npm run cli -- suggest --prompt "..."
+  npm run cli -- link --endpoint URL --key DEVICE_KEY
 
 Run behavior:
   1. Removes local prompt waste and adds a concise output instruction.
@@ -53,6 +58,10 @@ Run options:
       --current-tier TIER        Current tier used for the recommendation
       --dry-run                  Show the fixed prompt without running the AI
       --no-color                 Disable ANSI color
+
+Account sync:
+  link --endpoint URL --key KEY  Save a device connection for automatic sync
+  PROMPTFOOTPRINT_SYNC_URL and PROMPTFOOTPRINT_SYNC_KEY override saved values
 
 The fixed prompt is appended to the command. Put a quoted "{prompt}" argument
 after -- to place it somewhere else instead.
@@ -326,6 +335,7 @@ async function runCommand(parsed: ParsedArgs): Promise<number> {
     config,
   );
   console.error(`\n${humanReport(result, color)}`);
+  await syncResult(result);
   return 0;
 }
 
@@ -356,6 +366,66 @@ async function analyzeCommand(parsed: ParsedArgs): Promise<void> {
 
   if (parsed.options.json) console.log(JSON.stringify(result, null, 2));
   else console.log(humanReport(result, useColor(parsed.options, process.stdout)));
+  await syncResult(result);
+}
+
+interface SyncConfig { endpoint: string; key: string }
+
+function syncConfigPath(): string {
+  return join(homedir(), ".promptfootprint", "config.json");
+}
+
+async function readSyncConfig(): Promise<SyncConfig | null> {
+  const fromEnvironment = {
+    endpoint: process.env.PROMPTFOOTPRINT_SYNC_URL ?? "",
+    key: process.env.PROMPTFOOTPRINT_SYNC_KEY ?? "",
+  };
+  if (fromEnvironment.endpoint && fromEnvironment.key) return fromEnvironment;
+  try {
+    const value = JSON.parse(await readFile(syncConfigPath(), "utf8")) as Partial<SyncConfig>;
+    return value.endpoint && value.key ? { endpoint: value.endpoint, key: value.key } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function linkCommand(parsed: ParsedArgs): Promise<void> {
+  const endpoint = parsed.options.endpoint;
+  const key = parsed.options.key;
+  if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint)) {
+    throw new Error("--endpoint must be the HTTPS endpoint shown on the platform Connections page.");
+  }
+  if (typeof key !== "string" || key.length < 32) {
+    throw new Error("--key must be the device key shown on the platform Connections page.");
+  }
+  const path = syncConfigPath();
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, `${JSON.stringify({ endpoint, key }, null, 2)}\n`, { mode: 0o600 });
+  console.log(`Linked this terminal to PromptFootprint. Future analyses will sync automatically.\nSaved: ${path}`);
+}
+
+async function syncResult(result: FullAnalysis): Promise<void> {
+  const connection = await readSyncConfig();
+  if (!connection) return;
+  const record = syncUsageEvent({
+    id: result.event.id,
+    timestamp: result.event.timestamp,
+    surface: "cli",
+    tool: result.event.tool,
+    modelClass: result.event.model_class,
+    tokens: result.event.tokens,
+    totalOutputTokens: result.analysis.totalOutputTokens,
+    wastedOutputTokens: result.analysis.wastedOutputTokens,
+    efficiency: result.analysis.efficiency,
+    flags: result.analysis.flags,
+    estimate: result.estimate,
+  });
+  try {
+    await sendSyncUsageEvent(connection.endpoint, connection.key, record);
+    console.error("PromptFootprint: synced to your account.");
+  } catch (error) {
+    console.error(`PromptFootprint: analysis completed, but account sync failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function promptOnlyCommand(parsed: ParsedArgs): Promise<void> {
@@ -383,7 +453,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return 0;
     }
     if (parsed.command === "run") return await runCommand(parsed);
-    if (parsed.command === "analyze") await analyzeCommand(parsed);
+    if (parsed.command === "link") await linkCommand(parsed);
+    else if (parsed.command === "analyze") await analyzeCommand(parsed);
     else if (parsed.command === "rewrite" || parsed.command === "suggest") await promptOnlyCommand(parsed);
     else throw new Error(`Unknown command "${parsed.command}".\n\n${HELP}`);
     return 0;
