@@ -1,0 +1,40 @@
+
+> output-waste-optimizer@0.1.0 cli
+> node apps/cli/index.ts run -p Hi there! Could you please explain why the sky is blue? Thanks! --dry-run -- claude -p
+
+PromptFootprint preflight
+  Auto-fix applied: 16 → 13 estimated input tokens
+  Suggested model: claude-haiku-5-5 at low effort is likely enough (low confidence)
+    Claude: claude-haiku-5-5 at low effort
+    Gemini: gemini-3.1-flash-lite at low effort
+    ChatGPT: check OpenAI's model list at minimal effort
+  Sending: Explain why the sky is blue. Answer in 3 sentences.
+
+> output-waste-optimizer@0.1.0 cli
+> node apps/cli/index.ts analyze -p Explain DNS in 3 sentences -r Great question! DNS maps names to IP addresses. It queries resolvers, root servers, then authoritative servers, caching each answer so later lookups are faster, which keeps the whole system responsive even under heavy global load every single day. In summary, DNS turns names into addresses. I hope this helps! --no-color
+
+Efficiency  89%  (8/71 output tokens flagged)
+
+Estimated wasted resources
+  Energy  0.006–0.352 Wh
+  Water   0.011–2.499 mL
+  CO₂     0.002–0.144 g
+  Cost    0.000000–0.000000 USD
+
+Waste detected
+  • filler: Opening pleasantry. Costs output tokens and says nothing. “Great question!”
+  • recap: Adds a closing summary. Advisory only: some recaps are useful, so this is not scored. “In summary, DNS turns names into addresses. I hope this helps!”
+  • filler: Closing pleasantry or offer of more help. Pure overhead. “I hope this helps!”
+
+Three fixes
+  1. Standing instruction: No summary or recap at the end unless I ask for one. No greetings, no praise for the question, no closing offers of more help.
+  2. Shorter prompt: Explain DNS in 3 sentences. No recap or summary at the end. No greeting and no closing offer of more help.
+     7 → 27 estimated input tokens (+20)
+  3. Model suggestion: claude-haiku-5-5 at low effort is likely enough (high confidence)
+     Claude: claude-haiku-5-5 at low effort
+     Gemini: gemini-3.1-flash-lite at low effort (unchecked name)
+     ChatGPT: check OpenAI's model list at minimal effort (unchecked name)
+
+Length was scored against the 60-word target from your prompt.
+Grid: eia. Estimates are ranges, not measurements.
+Assumptions: Cost shows as zero until you enter your own price per output token in settings. Input tokens are counted as zero energy. That is this model's deliberate output-centred assumption, not a measurement. Cached input reads are counted as near-zero energy. Token counts are estimated from the text, not read from a usage field.

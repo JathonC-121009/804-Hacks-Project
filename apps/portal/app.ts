@@ -116,14 +116,24 @@ function handleUser(next: PortalUser | null): void {
   el("user-avatar").textContent = user.email.slice(0, 1).toUpperCase();
   alias = defaultAlias(user.uid);
   el<HTMLInputElement>("alias-input").value = "";
-  void loadAlias(user.uid)
-    .then((saved) => {
-      if (!saved) return;
+  // Load the saved alias BEFORE anything can publish a row. Publishing first
+  // and loading after is a race the user loses: their chosen name gets
+  // overwritten with anon-xxxx every time they sign in.
+  void startSession(user.uid);
+}
+
+async function startSession(uid: string): Promise<void> {
+  try {
+    const saved = await loadAlias(uid);
+    if (saved) {
       alias = saved;
       el<HTMLInputElement>("alias-input").value = saved;
-    })
-    .catch(() => undefined);
-  stopEvents = observeEvents(user.uid, (nextEvents) => {
+    }
+  } catch {
+    // An unreadable profile is not a reason to show no dashboard.
+  }
+  if (user?.uid !== uid) return;
+  stopEvents = observeEvents(uid, (nextEvents) => {
     events = nextEvents;
     renderDashboard();
     // Publishing on every refresh keeps the public row honest when the
