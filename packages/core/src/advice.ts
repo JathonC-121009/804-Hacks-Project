@@ -35,9 +35,9 @@ const LIMIT = new RegExp(
   "i",
 );
 
-type RequestKind = "explain" | "write" | "list" | "summarize" | "other";
+export type RequestKind = "explain" | "write" | "list" | "summarize" | "other";
 
-function requestKind(prompt: string): RequestKind {
+export function requestKind(prompt: string): RequestKind {
   if (/\b(?:summari[sz]e|summary|tl;?dr)\b/i.test(prompt)) return "summarize";
   if (/\b(?:list|give me (?:some|a few|\d+)|name (?:some|a few|\d+)|brainstorm|ideas for)\b/i.test(prompt)) return "list";
   if (/\b(?:write|draft|compose|create (?:a|an|the)|rewrite)\b/i.test(prompt)) return "write";
@@ -55,6 +55,11 @@ const SUGGESTION_FOR: Record<RequestKind, string> = {
   other: 'Add a length or format, for example "in 3 sentences" or "as a table".',
 };
 
+/** True when the prompt already sets a length or format. */
+export function hasLengthLimit(prompt: string): boolean {
+  return LIMIT.test(prompt);
+}
+
 function unbounded(prompt: string): PromptAdvice | null {
   if (LIMIT.test(prompt)) return null;
   const kind = requestKind(prompt);
@@ -71,6 +76,16 @@ function unbounded(prompt: string): PromptAdvice | null {
 
 const REQUEST_VERB = /\b(?:explain|tell|list|give|show|compare|write|describe|summari[sz]e|name|draft|suggest)\b/gi;
 const CONNECTIVE = /\b(?:and|also|plus|then)\b/i;
+
+export function isMultiAsk(prompt: string): boolean {
+  return multiAskCount(prompt) >= 2;
+}
+
+function multiAskCount(prompt: string): number {
+  const questions = (prompt.match(/\?/g) ?? []).length;
+  const verbs = (prompt.match(REQUEST_VERB) ?? []).length;
+  return questions >= 2 ? questions : verbs >= 2 && CONNECTIVE.test(prompt) ? verbs : 0;
+}
 
 function multiAsk(prompt: string): PromptAdvice | null {
   const questions = (prompt.match(/\?/g) ?? []).length;
