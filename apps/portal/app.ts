@@ -429,7 +429,7 @@ async function analyze(): Promise<void> {
 function renderAnalysis(result: FullAnalysis): void {
   const pct = Math.round(result.analysis.efficiency * 100);
   el("result-efficiency").textContent = `${pct}%`;
-  el("result-summary").textContent = `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable.`;
+  el("result-summary").textContent = `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable. ${result.analysis.coverage.note}`;
   const energy = result.estimate.wasted.energyWh;
   const water = result.estimate.wasted.waterMl;
   const co2 = result.estimate.wasted.co2g;

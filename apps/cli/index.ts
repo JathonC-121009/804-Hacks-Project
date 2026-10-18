@@ -250,6 +250,7 @@ function humanReport(result: FullAnalysis, color: boolean): string {
       (r) => `     ${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : dim(" (unchecked name)")}`,
     ),
     "",
+    dim(analysis.coverage.note),
     dim(`Grid: ${result.grid.source}. Estimates are ranges, not measurements.`),
   );
 

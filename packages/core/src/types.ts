@@ -137,6 +137,8 @@ export interface AnalysisResult {
   /** 1 - wasted/total. Independent of every energy constant. */
   efficiency: number;
   tokenSource: TokenSource;
+  /** What the score did and did not measure, so 100% is never a silent claim. */
+  coverage: { lengthTargetWords: number | null; note: string };
 }
 
 // --- estimates --------------------------------------------------------------

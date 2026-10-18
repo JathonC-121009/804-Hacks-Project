@@ -175,10 +175,19 @@ export const FIXTURES: Fixture[] = [
     id: "advisory-recap",
     prompt: "How can a software team cut its AI energy use?",
     response:
-      "Start by routing simple work to a smaller model, since most requests do not need a frontier model. Cap output length on tasks with a well-defined answer shape. Cache repeated requests so identical questions never reach a GPU twice. Check quality once per task rather than per request, otherwise the checking costs more than the saving. In summary, route smaller, cap output, cache repeats, and check once.",
+      "Start by routing simple work to a smaller model, since most requests do not need a frontier model. Cap output length on tasks with a well-defined answer shape. Cache repeated requests so identical questions never reach a GPU twice. Check quality once per task rather than per request, otherwise the checking costs more than the saving. In summary, measure first, since you cannot cut what you have not counted.",
     expectHigh: [],
     expectAdvisory: ["recap"],
-    note: "Closing recap in the final third. Advisory, never scored.",
+    note: "Closing summary that adds new content. Advisory, never scored.",
+  },
+  {
+    id: "restating-recap",
+    prompt: "How can a software team cut its AI energy use?",
+    response:
+      "Start by routing simple work to a smaller model, since most requests do not need a frontier model. Cap output length on tasks with a well-defined answer shape. Cache repeated requests so identical questions never reach a GPU twice. Check quality once per task rather than per request, otherwise the checking costs more than the saving. In summary, route smaller, cap output, cache repeats, and check once.",
+    expectHigh: ["recap"],
+    expectAdvisory: [],
+    note: "Closing recap that only repeats the body. Measurable, so scored.",
   },
   {
     id: "advisory-overlength",
