@@ -99,10 +99,18 @@ export function recommendationsFor(config: Config, tier: ModelClass): PlatformRe
   });
 }
 
+/**
+ * Suggest a tier for this prompt.
+ *
+ * `platformId` names the tool the person is using, so the headline names THAT
+ * tool's model. Without it the headline stays generic. It used to default to
+ * Claude's model, which put Claude's name on every other tool's screen.
+ */
 export function suggestModel(
   prompt: string,
   config: Config,
   assumedCurrentTier?: ModelClass,
+  platformId?: string,
 ): ModelSuggestion {
   const words = countWords(prompt);
   const signals: Signal[] = SIGNALS.map((s) => {
@@ -133,10 +141,12 @@ export function suggestModel(
   }
 
   const recommendations = recommendationsFor(config, suggestedTier);
-  const claude = recommendations.find((r) => r.platformId === "claude") ?? recommendations[0];
-  const label = isDowngrade && claude
-    ? `${claude.model} at ${claude.effort} effort is likely enough`
-    : `Stay on your current model`;
+  const named = platformId ? recommendations.find((r) => r.platformId === platformId) : undefined;
+  const label = !isDowngrade
+    ? "Stay on your current model"
+    : named
+      ? `${named.model} at ${named.effort} effort is likely enough${named.verified ? "" : " (name not checked)"}`
+      : `A ${suggestedTier} model is likely enough`;
 
   return {
     assumedCurrentTier: current,

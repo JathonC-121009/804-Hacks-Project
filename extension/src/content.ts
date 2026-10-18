@@ -328,7 +328,7 @@ function evaluateDraft(composer: Element): void {
   }
 
   const rewrite = rewritePrompt(draft, undefined, { wasteProfile });
-  const suggestion = suggestModel(draft, config, site.defaultModelClass);
+  const suggestion = suggestModel(draft, config, site.defaultModelClass, site.id);
 
   // Auto-apply the safe half: append the output directions if they are not
   // already there. Done visibly, in the composer, so the user can see and

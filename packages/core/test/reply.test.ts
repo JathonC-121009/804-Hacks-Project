@@ -172,3 +172,17 @@ test("100% is only reported when something was actually measured", () => {
   const measured = analyze(polished, "explain closed loop cooling in 1 sentence");
   assert.ok(measured.coverage.lengthTargetWords !== null, "a stated length is measurable");
 });
+
+test("a tool's headline names that tool's model, never another tool's", async () => {
+  const { suggestModel } = await import("../src/suggestModel.ts");
+  const { readFile } = await import("node:fs/promises");
+  const config = {
+    sources: JSON.parse(await readFile(new URL("../../../config/sources.json", import.meta.url), "utf8")),
+    models: JSON.parse(await readFile(new URL("../../../config/models.json", import.meta.url), "utf8")),
+  } as never;
+  const prompt = "Tell me the history of the Roman road network across the empire in full detail please";
+  const grok = suggestModel(prompt, config, "large", "grok");
+  const generic = suggestModel(prompt, config, "large");
+  if (grok.isDowngrade) assert.doesNotMatch(grok.label, /claude/i, grok.label);
+  assert.doesNotMatch(generic.label, /claude/i, `unnamed headline should not name Claude: ${generic.label}`);
+});
