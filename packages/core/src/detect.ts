@@ -319,14 +319,34 @@ function detectOverlength(response: string, prompt: string): Flag[] {
  * Only explicit numbers count. "Briefly" has no measurable target, so it is not
  * scored; a number the person wrote is the only length we can defend.
  */
+const SPELLED: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+/** "3" or "three", so a prompt written in words is read the same as one in digits. */
+const COUNT = `(\\d+|${Object.keys(SPELLED).join("|")})`;
+
+function toCount(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const spelled = SPELLED[raw.toLowerCase()];
+  if (spelled !== undefined) return spelled;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function lengthTargetWords(prompt: string): number | null {
-  const sentences = prompt.match(/\b(\d+)\s+sentences?\b/i);
-  if (sentences) return Number(sentences[1]) * 20;
-  const bullets = prompt.match(/\b(\d+)\s+(?:bullets?|bullet points?|points?|items?)\b/i);
-  if (bullets) return Number(bullets[1]) * 15;
-  const words = prompt.match(/\b(?:under|within|at most|no more than|max(?:imum)?|in)\s+(\d+)\s+words?\b/i);
-  if (words) return Number(words[1]);
-  if (/\bone sentence\b/i.test(prompt)) return 25;
+  const sentences = toCount(prompt.match(new RegExp(`\\b${COUNT}\\s+sentences?\\b`, "i"))?.[1]);
+  if (sentences !== null) return sentences * 20;
+  const bullets = toCount(
+    prompt.match(new RegExp(`\\b${COUNT}\\s+(?:bullets?|bullet points?|points?|items?)\\b`, "i"))?.[1],
+  );
+  if (bullets !== null) return bullets * 15;
+  const words = toCount(
+    prompt.match(
+      new RegExp(`\\b(?:under|within|at most|no more than|max(?:imum)?|exactly|in)\\s+${COUNT}\\s+words?\\b`, "i"),
+    )?.[1],
+  );
+  if (words !== null) return words;
   if (/\bone word\b/i.test(prompt)) return 1;
   return null;
 }

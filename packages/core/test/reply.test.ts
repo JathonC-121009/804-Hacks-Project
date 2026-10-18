@@ -37,3 +37,39 @@ test("length targets are read only from explicit numbers", () => {
   assert.equal(lengthTargetWords("Keep it under 120 words."), 120);
   assert.equal(lengthTargetWords("Explain briefly."), null);
 });
+
+/**
+ * Regression: a prompt that states its own length must never receive a second,
+ * different one. Adding "answer in one or two sentences" to a prompt that said
+ * "exactly 3 sentences" changes what the person asked for, which is the worst
+ * thing this tool can do to a prompt.
+ */
+test("a prompt that states its own length is never given a contradicting one", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  for (const prompt of [
+    "What does the film show? Answer in exactly 3 sentences, no more and no less.",
+    "Explain the Space Race. Answer in three sentences.",
+    "Summarize this. Give exactly 5 bullets.",
+    "Describe it in exactly 50 words.",
+  ]) {
+    const added = rewritePrompt(prompt).added.join(" ");
+    assert.doesNotMatch(added, /sentence|word|bullet|point/i, `added a second limit to: ${prompt}\n  -> ${added}`);
+  }
+});
+
+test("a prompt padded with definitions gets them stripped, and shrinks", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  const padded =
+    "A titanium cylinder, which is a metal container, was found under the ice, which is frozen water, " +
+    "at a Soviet base, which is a research station, in Antarctica, which is a continent. What does it show?";
+  const r = rewritePrompt(padded);
+  assert.ok(r.tokenDelta < 0, `expected shrinkage, got ${r.tokenDelta}`);
+  assert.ok(r.removed.length >= 3, `expected the definitions to be removed, got ${r.removed.length}`);
+  assert.doesNotMatch(r.rewritten, /which is frozen water/i);
+});
+
+test("a single 'which is' clause is left alone, because it usually carries meaning", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  const r = rewritePrompt("Explain the PJM grid, which is the market my data centre buys from.");
+  assert.match(r.rewritten, /which is the market/i);
+});

@@ -74,6 +74,16 @@ const TASK_DIRECTION: Record<TaskType, string> = {
   general: "",
 };
 
+/**
+ * The same directions with their length clause taken out, used when the prompt
+ * already states a length. "Reply with at most 5 bullet points" on a prompt
+ * that asked for exactly 3 is a contradiction, and the model has to pick one.
+ */
+const TASK_DIRECTION_NO_LENGTH: Partial<Record<TaskType, string>> = {
+  summarize: "No preamble, no closing line.",
+  code: "Reply with the code only. No preamble.",
+};
+
 /** Task types whose direction says nothing about length, so the prompt may. */
 const WEAK_BASE: TaskType[] = ["general", "reasoning"];
 
@@ -175,11 +185,18 @@ function chooseDirections(
   profile: WasteProfile | undefined,
 ): string[] {
   const weak = WEAK_BASE.includes(taskType);
-  const length = weak ? lengthDirectionFor(prompt) : null;
+  // Never add a length when the prompt already states one. Two limits in one
+  // prompt contradict each other, and the one we invent would override what
+  // the person actually asked for.
+  const length = weak && !hasLengthLimit(prompt) ? lengthDirectionFor(prompt) : null;
 
   // A length direction earned by the prompt beats a bare "Answer directly",
   // which it already implies.
-  const lines: string[] = [length ?? TASK_DIRECTION[taskType]];
+  const stated = hasLengthLimit(prompt);
+  const base = stated
+    ? (TASK_DIRECTION_NO_LENGTH[taskType] ?? (weak ? "" : TASK_DIRECTION[taskType]))
+    : TASK_DIRECTION[taskType];
+  const lines: string[] = [length ?? base];
 
   if (hasPastedContext) lines.push("Do not quote the text above back to me.");
 
@@ -291,6 +308,34 @@ function dropRedundantRequests(
   return { text, dropped };
 }
 
+/**
+ * Definitions the model does not need: ", which is a chemical element",
+ * ", which is cold water in a solid state".
+ *
+ * Only stripped when the prompt carries SEVERAL of them. One "which is ..."
+ * usually carries real information the model needs; a prompt with three or
+ * more is written in a padding style, and that pattern is what makes removal
+ * safe enough to offer. Removal is always shown in the diff and never applied
+ * silently, so the person can reject it.
+ */
+const APPOSITIVE =
+  /,\s*(?:which|who)\s+(?:is|was|are|were|means)\b[^,.;?!]{0,120}(?=[,.;?!])/gi;
+const APPOSITIVE_MIN = 3;
+
+function stripDefinitions(text: string, whole: string): { text: string; removed: Removal[] } {
+  const all = whole.match(APPOSITIVE) ?? [];
+  if (all.length < APPOSITIVE_MIN) return { text, removed: [] };
+  const removed: Removal[] = [];
+  const next = text.replace(APPOSITIVE, (match) => {
+    removed.push({
+      text: match.trim(),
+      why: "Defines a term the model already knows. This prompt has several of these.",
+    });
+    return "";
+  });
+  return { text: next, removed };
+}
+
 const DUPLICATE_JACCARD = 0.8;
 /** Floor for FUZZY matching only: short list items legitimately share wording. */
 const DUPLICATE_MIN_WORDS = 6;
@@ -397,6 +442,9 @@ export function rewritePrompt(
     // let a stray "please" hide a repeat.
     let text = s.text;
     const politenessRemovals: Removal[] = [];
+    const definitions = stripDefinitions(text, prompt);
+    text = definitions.text;
+    politenessRemovals.push(...definitions.removed);
     for (const strip of PHRASE_STRIPS) {
       if (strip.re.test(text)) {
         const before = text;

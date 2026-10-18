@@ -1,4 +1,5 @@
 import { countWords } from "./text.ts";
+import { lengthTargetWords } from "./detect.ts";
 
 /**
  * Prompt advice: checks that look at what the request asks for, not at how the
@@ -55,9 +56,16 @@ const SUGGESTION_FOR: Record<RequestKind, string> = {
   other: 'Add a length or format, for example "in 3 sentences" or "as a table".',
 };
 
-/** True when the prompt already sets a length or format. */
+/**
+ * True when the prompt already sets a length or format.
+ *
+ * Also asks the scorer's parser: it understands counts this regex does not
+ * ("in exactly 3 sentences"). The two must agree, because when they disagree
+ * the rewrite adds a SECOND limit that contradicts the one the user wrote,
+ * which changes what they asked for.
+ */
 export function hasLengthLimit(prompt: string): boolean {
-  return LIMIT.test(prompt);
+  return LIMIT.test(prompt) || lengthTargetWords(prompt) !== null;
 }
 
 function unbounded(prompt: string): PromptAdvice | null {
