@@ -1,6 +1,6 @@
 {
-  "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
-  "authDomain": "YOUR_PROJECT.firebaseapp.com",
-  "projectId": "YOUR_PROJECT_ID",
-  "appId": "YOUR_FIREBASE_APP_ID"
+  "apiKey": "AIzaSyCGqndysv5nCMDfQUhzNkTrZI8oQvIrKUM",
+  "authDomain": "prompt-footprint.firebaseapp.com",
+  "projectId": "prompt-footprint",
+  "appId": "1:100697931811:web:dc6e52accc4c5efa8bb196"
 }
