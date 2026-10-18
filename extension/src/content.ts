@@ -30,6 +30,7 @@ import {
   buildInstructionBlock,
   estimate,
   rewritePrompt,
+  stableHash,
   suggestModel,
   wasteProfileOf,
 } from "../../packages/core/src/index.ts";
@@ -393,17 +394,36 @@ function normalizeWs(s: string): string {
 
 const seen = new WeakSet<Element>();
 
-function watchReplies(): void {
-  const { el: root } = pick<HTMLElement>(document, site.conversationRoot);
-  const target = root ?? document.body;
+/**
+ * Hashes of replies already counted, so a re-render cannot count one twice.
+ *
+ * `seen` keys on the element, which is not enough: these apps rebuild the
+ * conversation from scratch when you switch chats and come back, producing new
+ * elements holding the same text. Without this the totals climb on their own,
+ * and a footprint tool whose numbers inflate when you navigate is worse than
+ * no tool. Hashes, not text, so nothing readable is held in memory.
+ */
+const countedText = new Set<string>();
 
+function watchReplies(): void {
+  // Observe document.body, not the conversation root.
+  //
+  // These sites are single-page apps: sending the first message navigates from
+  // the new-chat view to /c/<id>, and the framework swaps out the <main>
+  // element on the way. An observer bound to the root found at boot is then
+  // watching a node that is no longer in the page, so no reply ever arrives and
+  // the extension looks dead while every selector it uses is perfectly correct.
+  //
+  // body is the one node the app never replaces. The extra mutations it sees
+  // cost nothing here, because the work is debounced and scanReplies only acts
+  // on messages it has not already measured.
   const observer = new MutationObserver(() => {
     window.clearTimeout(replyDebounce);
     // Replies stream in token by token. Waiting for a quiet moment means we
     // measure the finished answer instead of a half-written one.
     replyDebounce = window.setTimeout(scanReplies, 700);
   });
-  observer.observe(target, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   scanReplies();
 }
 
@@ -420,7 +440,15 @@ function scanReplies(): void {
     const text = msg.innerText?.trim() ?? "";
     if (text.length < 40) continue;
     seen.add(msg);
-    attachReceipt(msg, text, lastPrompt);
+
+    // Same reply, new element: a re-render, not a new answer. The receipt is
+    // drawn again so it does not vanish when you switch chats and come back,
+    // but nothing is added to the totals.
+    const fingerprint = stableHash(text);
+    const alreadyCounted = countedText.has(fingerprint);
+    countedText.add(fingerprint);
+
+    attachReceipt(msg, text, lastPrompt, alreadyCounted);
 
     // A reply means the draft was sent. Clear the pre-send bar, which is
     // pinned over the composer and otherwise sits on top of the new receipt,
@@ -431,7 +459,12 @@ function scanReplies(): void {
   }
 }
 
-function attachReceipt(msg: HTMLElement, response: string, prompt: string): void {
+function attachReceipt(
+  msg: HTMLElement,
+  response: string,
+  prompt: string,
+  alreadyCounted = false,
+): void {
   if (!config) return;
 
   const result = analyze(response, prompt);
@@ -489,6 +522,10 @@ function attachReceipt(msg: HTMLElement, response: string, prompt: string): void
   }
 
   msg.appendChild(bar);
+
+  // A redraw of a reply already measured: the receipt above is shown again,
+  // but counting it a second time would be a lie.
+  if (alreadyCounted) return;
 
   // Learn from this reply straight away, so the next draft's directions already
   // target whatever this one wasted tokens on.
