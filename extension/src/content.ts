@@ -17,7 +17,7 @@
  * chrome.storage, and nothing reaches the network at all.
  */
 
-import type { Config, Flag, ModelClass } from "../../packages/core/src/index.ts";
+import type { Config, Estimate, Flag, ModelClass, Range } from "../../packages/core/src/index.ts";
 import {
   analyze,
   buildInstructionBlock,
@@ -408,7 +408,7 @@ function attachReceipt(msg: HTMLElement, response: string, prompt: string): void
   }
 
   msg.appendChild(bar);
-  bumpTotals(result.wastedOutputTokens, result.totalOutputTokens);
+  bumpTotals(result.wastedOutputTokens, result.totalOutputTokens, est);
 }
 
 const LABELS: Record<Flag["type"], string> = {
@@ -422,15 +422,48 @@ const LABELS: Record<Flag["type"], string> = {
 };
 const label = (f: Flag): string => LABELS[f.type];
 
-/** Counts only. Never text. This is what makes the privacy claim true. */
-function bumpTotals(wasted: number, total: number): void {
-  chrome.storage?.local.get(["wasted", "total", "replies"], (prev) => {
+interface StoredResourceTotals {
+  energyWh: Range;
+  waterMl: Range;
+  co2g: Range;
+}
+
+function addRange(a: Range | undefined, b: Range): Range {
+  return {
+    low: (a?.low ?? 0) + b.low,
+    high: (a?.high ?? 0) + b.high,
+    unit: b.unit,
+  };
+}
+
+function addResources(
+  previous: StoredResourceTotals | undefined,
+  next: Pick<Estimate, "energyWh" | "waterMl" | "co2g">,
+): StoredResourceTotals {
+  return {
+    energyWh: addRange(previous?.energyWh, next.energyWh),
+    waterMl: addRange(previous?.waterMl, next.waterMl),
+    co2g: addRange(previous?.co2g, next.co2g),
+  };
+}
+
+/** Aggregate counts and resource ranges only. Prompt and response text never enter storage. */
+function bumpTotals(wasted: number, total: number, estimateForReply: Estimate): void {
+  chrome.storage?.local.get(
+    ["wasted", "total", "replies", "resourcesTotal", "resourcesWasted"],
+    (prev) => {
     chrome.storage.local.set({
       wasted: (prev["wasted"] ?? 0) + wasted,
       total: (prev["total"] ?? 0) + total,
       replies: (prev["replies"] ?? 0) + 1,
+      resourcesTotal: addResources(prev["resourcesTotal"] as StoredResourceTotals | undefined, estimateForReply),
+      resourcesWasted: addResources(
+        prev["resourcesWasted"] as StoredResourceTotals | undefined,
+        estimateForReply.wasted,
+      ),
     });
-  });
+    },
+  );
 }
 
 // --- helpers ----------------------------------------------------------------
