@@ -106,15 +106,37 @@ function multiAsk(prompt: string): PromptAdvice | null {
 /** A pasted block of text or code, measured the way the rewrite measures it. */
 const PASTED_MIN_WORDS = 60;
 
+/**
+ * A long block the person pasted in, as distinct from a long instruction.
+ *
+ * Requiring a separate block matters: a single flowing paragraph is someone
+ * writing a detailed request, not pasting context, and telling them to trim it
+ * to "the lines around the problem" is advice about a problem they do not have.
+ */
 function largePaste(prompt: string): PromptAdvice | null {
-  const block = prompt.match(/```[\s\S]*?```/g)?.join("\n") ?? "";
-  const words = countWords(block) || countWords(prompt.split(/\n\s*\n/).sort((a, b) => countWords(b) - countWords(a))[0] ?? "");
+  const fenced = prompt.match(/```[\s\S]*?```/g)?.join("\n") ?? "";
+  if (fenced) {
+    const words = countWords(fenced);
+    if (words >= PASTED_MIN_WORDS) return pasteAdvice(words, "code block");
+    return null;
+  }
+  // No fence: only count a block that is set apart from the rest of the prompt.
+  const blocks = prompt.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  if (blocks.length < 2) return null;
+  const biggest = blocks.slice().sort((a, b) => countWords(b) - countWords(a))[0] ?? "";
+  const words = countWords(biggest);
   if (words < PASTED_MIN_WORDS) return null;
+  // The block has to dominate: otherwise this is just a multi-paragraph request.
+  if (words / Math.max(1, countWords(prompt)) < 0.6) return null;
+  return pasteAdvice(words, "block of text");
+}
+
+function pasteAdvice(words: number, kind: string): PromptAdvice {
   return {
     kind: "large_paste",
-    quote: `${words} words pasted`,
-    why: "The model has to read all of this before answering, and you pay for every word of it.",
-    suggestion: "Paste only the lines around the problem, and say which part matters, for example 'the error is on line 40'.",
+    quote: `${words}-word ${kind}`,
+    why: "The model reads all of this before answering, and you pay for every word of it.",
+    suggestion: "Include only the part the question is about, and say which part matters.",
     confidence: "medium",
   };
 }

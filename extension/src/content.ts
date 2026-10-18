@@ -34,6 +34,7 @@ import {
   isFirebaseConfigured,
   pushUsageEvent,
   refreshLeaderboardRow,
+  adviseOnPrompt,
   rewritePrompt,
   stableHash,
   suggestModel,
@@ -286,8 +287,10 @@ function evaluateDraft(composer: Element): void {
     return;
   }
 
+  const advice = adviseOnPrompt(draft);
   showNudge(composer, {
     canRewrite,
+    advice: advice[0] ? `${advice[0].why} ${advice[0].suggestion}` : "",
     tokenDelta: rewrite.tokenDelta,
     removedCount: rewrite.removed.length,
     added: rewrite.added,
@@ -298,6 +301,8 @@ function evaluateDraft(composer: Element): void {
 
 interface NudgeData {
   canRewrite: boolean;
+  /** The single most useful thing to change about the request itself. */
+  advice: string;
   tokenDelta: number;
   removedCount: number;
   added: string[];
@@ -327,6 +332,12 @@ function showNudge(composer: Element, data: NudgeData): void {
     bits.push(
       `<button class="owo-btn" data-owo-apply="1" title="${escapeHtml(willAdd)}">${escapeHtml(action)}</button>`,
     );
+  }
+  if (data.advice) {
+    // One line only. The composer bar is not a report, and a nudge that fills
+    // the screen is a nudge people turn off.
+    const short = data.advice.length > 90 ? `${data.advice.slice(0, 88)}…` : data.advice;
+    bits.push(`<span class="owo-pill" title="${escapeHtml(data.advice)}">${escapeHtml(short)}</span>`);
   }
   if (data.suggestion.isDowngrade) {
     // Name the model for the site the user is on, falling back to Claude's line.

@@ -409,6 +409,7 @@ function tidy(text: string): string {
   // Removing "please" from "DNS, please?" leaves a stray comma before the
   // terminator. Drop commas and spaces that sit directly before a full stop.
   let t = text
+    .trim()
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1")
     .replace(/,\s*([.?!])/g, "$1")
