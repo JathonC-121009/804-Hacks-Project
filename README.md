@@ -27,7 +27,7 @@ Then open <http://127.0.0.1:5173/>.
 | Command | What it does |
 |---|---|
 | `npm run dev` | Serves the portal at :5173 |
-| `npm run cli -- --help` | Runs the provider-neutral terminal analyzer |
+| `npm run cli -- --help` | Runs the provider-neutral terminal optimizer |
 | `npm test` | 103 tests, including the acceptance criteria from the plan |
 | `npm run seed` | Regenerates the demo data in `data/` (run it the morning of the event so dates look current) |
 | `npm run grid` | Fetches real PJM grid data — needs `EIA_API_KEY` |
@@ -58,14 +58,24 @@ Demo core (D1–D9 in the plan) — all working, all tested:
 
 The browser extension is also built. It has dedicated support for ChatGPT, Claude, Gemini, Perplexity, Microsoft Copilot, Grok, Poe, DeepSeek, Mistral Le Chat, Meta AI, and You.com. For another browser-based AI tool, open its chat page and choose **Enable on this AI site** in the extension popup; access is requested only for that site.
 
-The CLI works with any terminal-based AI tool because it reads plain text from flags, files, or stdin. It can also use exact token counts when a provider exposes them:
+The CLI's `run` command fixes the prompt **before** it reaches a terminal AI, automatically adds a concise output instruction, recommends a model tier, runs the AI, and analyzes the answer. It works with any tool that accepts its prompt as the final argument:
 
 ```bash
-# Pipe an AI response into the analyzer
-gemini -p "Explain DNS" | npm run cli -- analyze \
-  --prompt "Explain DNS" --tool gemini
+# Gemini CLI: the optimized prompt is appended after -p
+npm run cli -- run --prompt "Please explain DNS please" -- gemini -p
 
-# Analyze saved prompt/response files
+# Claude, Codex, and Ollama use the same wrapper
+npm run cli -- run --prompt "Summarize this repository" -- claude -p
+npm run cli -- run --prompt "Find the failing test" -- codex exec
+npm run cli -- run --prompt "Explain DNS" -- ollama run llama3
+
+# For a CLI that needs the prompt in a specific position, use the placeholder
+npm run cli -- run --prompt "Explain DNS" -- my-ai --message "{prompt}" --quiet
+
+# Preview the automatic change without calling the AI
+npm run cli -- run --prompt "Please explain DNS please" --dry-run -- gemini -p
+
+# The original post-response analyzer remains available for saved output
 npm run cli -- analyze --prompt-file prompt.txt --response-file response.txt
 
 # Pass exact provider usage and return clean machine-readable output
@@ -73,7 +83,7 @@ node apps/cli/index.ts analyze -p "Summarize this" -r "Great question..." \
   --input-tokens 25 --output-tokens 80 --model-class medium --json
 ```
 
-Run `npm run cli -- --help` for all options. Text analysis stays local, and `--tool` is a free-form label so the CLI does not need a provider-specific integration.
+The AI provider still receives the optimized prompt, but PromptFootprint's rewrite, suggestion, and waste analysis all stay local. The original AI answer stays on stdout so it can still be piped or redirected; PromptFootprint's preflight and report go to stderr.
 
 **Not built, by choice:** CLI log reader (Tier 2), leaderboard (Tier 3), and carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
 
@@ -126,7 +136,7 @@ These are in the plan and enforced in the code, not just written down:
 1. **Never invent a number.** Every figure comes from `config/sources.json`. A source with no value yet throws `UnsourcedValueError` rather than silently becoming zero.
 2. **Estimates are ranges.** `formatRange()` is the only path to the screen and will not print a bare number.
 3. **Nothing leaves the device.** No network calls from the portal except loading its own files. No network tokenizer.
-4. **Nothing applies itself.** Rewrites and model suggestions are shown; the user approves. `ModelSuggestion.applied` is typed as `false`.
+4. **Automatic fixes are opt-in.** `analyze` and the browser UI only show changes. The CLI applies a rewrite only when the user explicitly invokes `run`; model changes remain suggestions because provider flags are not universal.
 5. **Demo data says it's demo data.** Seeded grid rows use `source: "seeded"`, never `"eia"`. Gate runs from recorded outputs are tagged `runner_kind: "recorded"` and the UI prints it.
 6. **Precision over recall.** Only high-confidence flags affect the score; fuzzy signals are advisory and never counted.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -22,18 +23,39 @@ interface ParsedArgs {
   command: string;
   positional: string[];
   options: Options;
+  commandArgs: string[];
 }
 
 const HELP = `PromptFootprint CLI
 
-Analyze AI output from any terminal tool. All text analysis stays local.
+Optimize prompts before they reach any terminal AI, then analyze the output.
+All PromptFootprint analysis stays local.
 
 Usage:
+  npm run cli -- run --prompt "..." -- gemini -p
+  npm run cli -- run --prompt "..." -- claude -p
+  npm run cli -- run --prompt "..." -- codex exec
+  npm run cli -- run --prompt "..." -- ollama run MODEL
   npm run cli -- analyze --prompt "..." --response "..."
-  ai-command | npm run cli -- analyze --prompt "..."
-  npm run cli -- analyze --prompt-file prompt.txt --response-file answer.txt
   npm run cli -- rewrite --prompt "..."
   npm run cli -- suggest --prompt "..."
+
+Run behavior:
+  1. Removes local prompt waste and adds a concise output instruction.
+  2. Shows the recommended model tier.
+  3. Sends the fixed prompt to the command after -- and analyzes its answer.
+
+Run options:
+  -p, --prompt TEXT              Original prompt
+      --prompt-file PATH         Read the prompt from a UTF-8 file
+      --tool NAME                Provider/tool label (defaults to executable name)
+  -m, --model-class TIER         Actual model tier: small, medium, or large
+      --current-tier TIER        Current tier used for the recommendation
+      --dry-run                  Show the fixed prompt without running the AI
+      --no-color                 Disable ANSI color
+
+The fixed prompt is appended to the command. Put a quoted "{prompt}" argument
+after -- to place it somewhere else instead.
 
 Analyze options:
   -p, --prompt TEXT              Prompt text
@@ -54,6 +76,8 @@ Analyze options:
   -h, --help                     Show this help
 
 Examples:
+  npm run cli -- run -p "Please explain DNS please" -- gemini -p
+  npm run cli -- run -p "Summarize notes.txt" -- my-ai --message "{prompt}"
   gemini -p "Explain DNS" | npm run cli -- analyze -p "Explain DNS" --tool gemini
   npm run cli -- analyze -p "Summarize this" -r "Great question..." --json
 `;
@@ -64,6 +88,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const command = first && !first.startsWith("-") ? args.shift()! : "analyze";
   const options: Options = {};
   const positional: string[] = [];
+  const commandArgs: string[] = [];
   const aliases: Record<string, string> = {
     p: "prompt",
     r: "response",
@@ -73,6 +98,10 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   while (args.length > 0) {
     const arg = args.shift()!;
+    if (arg === "--") {
+      commandArgs.push(...args);
+      break;
+    }
     if (!arg.startsWith("-")) {
       positional.push(arg);
       continue;
@@ -80,7 +109,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     const raw = arg.replace(/^--?/, "");
     const [nameWithAlias = "", inline] = raw.split(/=(.*)/s, 2);
     const name = aliases[nameWithAlias] ?? nameWithAlias;
-    if (["json", "help", "no-color"].includes(name)) {
+    if (["json", "help", "no-color", "dry-run"].includes(name)) {
       options[name] = true;
       continue;
     }
@@ -90,7 +119,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     options[name] = value;
   }
-  return { command, positional, options };
+  return { command, positional, options, commandArgs };
 }
 
 async function loadConfig(): Promise<Config> {
@@ -202,6 +231,104 @@ function humanReport(result: FullAnalysis, color: boolean): string {
   return lines.join("\n");
 }
 
+function useColor(options: Options, stream: NodeJS.WriteStream): boolean {
+  return stream.isTTY && !options["no-color"] && !process.env.NO_COLOR;
+}
+
+function preflightReport(
+  original: string,
+  fixed: string,
+  suggestion: ReturnType<typeof suggestModel>,
+  color: boolean,
+): string {
+  const bold = (s: string) => (color ? `\u001b[1m${s}\u001b[0m` : s);
+  const dim = (s: string) => (color ? `\u001b[2m${s}\u001b[0m` : s);
+  const before = estimateTokens(original).tokens;
+  const after = estimateTokens(fixed).tokens;
+  return [
+    bold("PromptFootprint preflight"),
+    `  Auto-fix applied: ${before} → ${after} estimated input tokens`,
+    `  Suggested model: ${suggestion.label} (${suggestion.confidence} confidence)`,
+    `  ${dim("Sending:")} ${fixed}`,
+  ].join("\n");
+}
+
+function commandWithPrompt(commandArgs: string[], prompt: string): { executable: string; args: string[] } {
+  if (commandArgs.length === 0) {
+    throw new Error('A terminal AI command is required after --. Example: run -p "Explain DNS" -- gemini -p');
+  }
+  const [executable, ...rawArgs] = commandArgs;
+  if (!executable) throw new Error("The command after -- is empty.");
+  let replaced = false;
+  const args = rawArgs.map((arg) => {
+    if (!arg.includes("{prompt}")) return arg;
+    replaced = true;
+    return arg.replaceAll("{prompt}", prompt);
+  });
+  if (!replaced) args.push(prompt);
+  return { executable, args };
+}
+
+async function execute(command: { executable: string; args: string[] }): Promise<{ output: string; status: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command.executable, command.args, {
+      stdio: ["inherit", "pipe", "inherit"],
+      shell: false,
+    });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => {
+      chunks.push(Buffer.from(chunk));
+      process.stdout.write(chunk);
+    });
+    child.on("error", (error) => reject(new Error(`Could not start ${command.executable}: ${error.message}`)));
+    child.on("close", (code, signal) => {
+      if (signal) reject(new Error(`${command.executable} ended from signal ${signal}.`));
+      else resolve({ output: Buffer.concat(chunks).toString("utf8"), status: code ?? 1 });
+    });
+  });
+}
+
+async function runCommand(parsed: ParsedArgs): Promise<number> {
+  const config = await loadConfig();
+  const original = (await readTextOption(parsed.options, "prompt")) || parsed.positional.join(" ");
+  if (!original.trim()) throw new Error("A prompt is required. Use --prompt or --prompt-file.");
+
+  const rewrite = rewritePrompt(original);
+  const currentTier = tier(parsed.options["current-tier"], config.models.default_assumed_tier);
+  const suggestion = suggestModel(original, config, currentTier);
+  const color = useColor(parsed.options, process.stderr);
+  console.error(preflightReport(original, rewrite.rewritten, suggestion, color));
+  if (parsed.options["dry-run"]) return 0;
+
+  const command = commandWithPrompt(parsed.commandArgs, rewrite.rewritten);
+  const run = await execute(command);
+  if (run.status !== 0) {
+    console.error(`\nPromptFootprint: ${command.executable} exited with status ${run.status}; output was not scored.`);
+    return run.status;
+  }
+  if (!run.output.trim()) {
+    console.error(`\nPromptFootprint: ${command.executable} returned no text to analyze.`);
+    return 0;
+  }
+
+  const modelClass = tier(parsed.options["model-class"], currentTier);
+  const result = runFullAnalysis(
+    {
+      prompt: rewrite.rewritten,
+      response: run.output,
+      modelClass,
+      grid: await loadGrid(),
+      pricePerOutputToken: numberOption(parsed.options, "price"),
+      assumedCurrentTier: currentTier,
+      surface: "cli",
+      tool: typeof parsed.options.tool === "string" ? parsed.options.tool : command.executable,
+    },
+    config,
+  );
+  console.error(`\n${humanReport(result, color)}`);
+  return 0;
+}
+
 async function analyzeCommand(parsed: ParsedArgs): Promise<void> {
   const config = await loadConfig();
   const prompt = await readTextOption(parsed.options, "prompt");
@@ -228,7 +355,7 @@ async function analyzeCommand(parsed: ParsedArgs): Promise<void> {
   );
 
   if (parsed.options.json) console.log(JSON.stringify(result, null, 2));
-  else console.log(humanReport(result, process.stdout.isTTY && !parsed.options["no-color"] && !process.env.NO_COLOR));
+  else console.log(humanReport(result, useColor(parsed.options, process.stdout)));
 }
 
 async function promptOnlyCommand(parsed: ParsedArgs): Promise<void> {
@@ -255,6 +382,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       console.log(HELP);
       return 0;
     }
+    if (parsed.command === "run") return await runCommand(parsed);
     if (parsed.command === "analyze") await analyzeCommand(parsed);
     else if (parsed.command === "rewrite" || parsed.command === "suggest") await promptOnlyCommand(parsed);
     else throw new Error(`Unknown command "${parsed.command}".\n\n${HELP}`);

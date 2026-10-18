@@ -49,3 +49,31 @@ test("CLI accepts a piped response and exact usage counts", () => {
   assert.equal(result.event.token_source, "exact");
   assert.equal(result.event.tokens.output, 20);
 });
+
+test("CLI run automatically fixes the prompt before invoking an arbitrary AI command", () => {
+  const fakeAi = [
+    "-e",
+    "process.stdout.write('AI received: ' + process.argv[1])",
+    "{prompt}",
+  ];
+  const run = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "run",
+      "--prompt",
+      "Please explain DNS please",
+      "--no-color",
+      "--",
+      process.execPath,
+      ...fakeAi,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /AI received: Explain DNS Answer directly\./);
+  assert.match(run.stdout, /No preamble, no closing offer, no recap\./);
+  assert.match(run.stderr, /Auto-fix applied:/);
+  assert.match(run.stderr, /Suggested model:/);
+  assert.match(run.stderr, /Efficiency/);
+});
