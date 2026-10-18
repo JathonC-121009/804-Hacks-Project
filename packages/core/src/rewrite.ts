@@ -344,7 +344,7 @@ function stripDefinitions(text: string, whole: string): { text: string; removed:
  * than emphasise: "just the code" means something "the code" does not.
  */
 const INTENSIFIERS =
-  /\b(?:totally|completely|perfectly|absolutely|entirely|utterly|truly|literally|really|very|extremely|highly|incredibly)\s+/gi;
+  /\b(?:totally|completely|perfectly|absolutely|entirely|utterly|truly|literally|really|very|extremely|highly|incredibly|fully|genuinely|thoroughly)\s+/gi;
 
 /**
  * Words that mean close enough to the same thing that listing several is
@@ -363,6 +363,7 @@ const SYNONYM_GROUPS: string[][] = [
   ["abandoned", "decommissioned", "disused", "derelict"],
   ["found", "discovered", "located", "unearthed"],
   ["precise", "exact", "specific"],
+  ["complete", "comprehensive", "thorough", "exhaustive", "full"],
   ["old", "aged", "ancient"],
   ["create", "make", "produce", "generate", "build"],
   ["explain", "describe", "clarify"],
@@ -593,15 +594,16 @@ export function rewritePrompt(
     text = definitions.text;
     politenessRemovals.push(...definitions.removed);
 
-    const synonyms = collapseSynonyms(text);
-    text = synonyms.text;
-    politenessRemovals.push(...synonyms.removed);
-
     const deEmphasised = text.replace(INTENSIFIERS, "");
     if (deEmphasised !== text) {
       politenessRemovals.push({ text: text.trim(), why: "Intensifiers add emphasis, not information." });
       text = deEmphasised;
     }
+
+    const synonyms = collapseSynonyms(text);
+    text = synonyms.text;
+    politenessRemovals.push(...synonyms.removed);
+
     for (const strip of PHRASE_STRIPS) {
       if (strip.re.test(text)) {
         const before = text;

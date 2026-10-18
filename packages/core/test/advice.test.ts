@@ -74,3 +74,23 @@ test("every suggestion quotes the prompt and names a concrete change", () => {
 test("a prompt with no request in it gets no advice", () => {
   assert.deepEqual(adviseOnPrompt("   "), []);
 });
+
+test("a prompt that already states a length is not told to add one", () => {
+  for (const prompt of [
+    "Explain how a heat pump works in exactly 3 sentences.",
+    "Summarize this in three sentences.",
+    "Describe it in exactly 50 words.",
+  ]) {
+    const kinds = adviseOnPrompt(prompt).map((a) => a.kind);
+    assert.ok(!kinds.includes("unbounded"), `told to add a length it already had: ${prompt} -> ${kinds}`);
+  }
+});
+
+test("one request containing a relative clause is not counted as several asks", () => {
+  const kinds = adviseOnPrompt(
+    "Write a guide to data centre water use that will show the whole process.",
+  ).map((a) => a.kind);
+  assert.ok(!kinds.includes("multi_ask"), `false multi-ask: ${kinds}`);
+  // A genuine second ask still counts.
+  assert.ok(adviseOnPrompt("Explain DNS and also list the record types").some((a) => a.kind === "multi_ask"));
+});

@@ -76,7 +76,9 @@ export function hasLengthLimit(prompt: string): boolean {
 }
 
 function unbounded(prompt: string): PromptAdvice | null {
-  if (LIMIT.test(prompt)) return null;
+  // hasLengthLimit, not LIMIT: the regex alone misses "in exactly 3
+  // sentences", so this told people to add a length they had already written.
+  if (hasLengthLimit(prompt)) return null;
   const kind = requestKind(prompt);
   // A bare statement with no request in it is not something to bound.
   if (kind === "other" && !/\?\s*$/.test(prompt.trim())) return null;
@@ -98,16 +100,20 @@ export function isMultiAsk(prompt: string): boolean {
 
 function multiAskCount(prompt: string): number {
   const questions = (prompt.match(/\?/g) ?? []).length;
-  const verbs = (prompt.match(REQUEST_VERB) ?? []).length;
-  return questions >= 2 ? questions : verbs >= 2 && CONNECTIVE.test(prompt) ? verbs : 0;
+  if (questions >= 2) return questions;
+  // "show, depict, and illustrate" is one request said three ways. Counting
+  // each verb turns a single ask into a false "you asked for four things".
+  const verbList = REQUEST_VERB.source.slice(2, -2);
+  const single = prompt.replace(new RegExp(`,\\s*(?:and\\s+)?(?:${verbList})\\b`, "gi"), "");
+  const verbs = (single.match(REQUEST_VERB) ?? []).length;
+  // The connective has to actually join two asks. "A guide that will show the
+  // process" has a second verb inside a relative clause, not a second request.
+  const joined = new RegExp(`\\b(?:and|also|then|plus)\\s+(?:\\w+\\s+){0,1}(?:${verbList})\\b`, "i").test(single);
+  return verbs >= 2 && joined ? verbs : 0;
 }
 
 function multiAsk(prompt: string): PromptAdvice | null {
-  const questions = (prompt.match(/\?/g) ?? []).length;
-  const verbs = (prompt.match(REQUEST_VERB) ?? []).length;
-  // Two questions, or two requests joined together. A single request that
-  // mentions two topics ("explain DNS and DHCP") is not counted.
-  const asks = questions >= 2 ? questions : verbs >= 2 && CONNECTIVE.test(prompt) ? verbs : 0;
+  const asks = multiAskCount(prompt);
   if (asks < 2) return null;
   return {
     kind: "multi_ask",
