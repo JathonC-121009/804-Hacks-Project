@@ -65,6 +65,10 @@ const AUTH_MESSAGES: Record<string, string> = {
   TOO_MANY_ATTEMPTS_TRY_LATER: "Too many attempts. Wait a minute and try again.",
   OPERATION_NOT_ALLOWED:
     "Email/password sign-in is switched off in the Firebase console (Authentication > Sign-in method).",
+  // Not the same as the provider being off: this means Authentication has never
+  // been started on the project at all, so there is no config to read.
+  CONFIGURATION_NOT_FOUND:
+    "This Firebase project has no Authentication set up yet. Open the Firebase console > Build > Authentication > Get started, then enable Email/Password.",
 };
 
 async function post(url: string, body: unknown, idToken?: string): Promise<any> {
