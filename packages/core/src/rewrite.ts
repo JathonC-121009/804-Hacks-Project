@@ -336,6 +336,88 @@ function stripDefinitions(text: string, whole: string): { text: string; removed:
   return { text: next, removed };
 }
 
+/**
+ * Intensifiers that add emphasis and no information. "Totally sealed" and
+ * "sealed" ask for the same thing.
+ *
+ * Deliberately excludes "just", "only" and "simply", which restrict rather
+ * than emphasise: "just the code" means something "the code" does not.
+ */
+const INTENSIFIERS =
+  /\b(?:totally|completely|perfectly|absolutely|entirely|utterly|truly|literally|really|very|extremely|highly|incredibly)\s+/gi;
+
+/**
+ * Words that mean close enough to the same thing that listing several is
+ * emphasis, not detail.
+ *
+ * A curated list rather than a thesaurus on purpose: collapsing "milk, eggs
+ * and bread" would destroy a real list, so only chains whose members are known
+ * to overlap are touched. It therefore misses plenty, which is the safe way to
+ * be wrong.
+ */
+const SYNONYM_GROUPS: string[][] = [
+  ["show", "shows", "depict", "depicts", "illustrate", "illustrates", "display", "displays", "portray", "portrays"],
+  ["reveal", "reveals", "disclose", "discloses", "uncover", "uncovers", "expose", "exposes"],
+  ["sealed", "closed", "shut", "airtight"],
+  ["undamaged", "unruined", "intact", "unbroken", "pristine"],
+  ["abandoned", "decommissioned", "disused", "derelict"],
+  ["found", "discovered", "located", "unearthed"],
+  ["precise", "exact", "specific"],
+  ["old", "aged", "ancient"],
+  ["create", "make", "produce", "generate", "build"],
+  ["explain", "describe", "clarify"],
+  ["summarize", "summarise", "condense", "recap"],
+  ["fix", "repair", "correct", "mend"],
+  ["big", "large", "huge", "enormous"],
+  ["quick", "fast", "rapid", "speedy"],
+];
+
+function groupOf(word: string): string[] | null {
+  const w = word.toLowerCase();
+  return SYNONYM_GROUPS.find((g) => g.includes(w)) ?? null;
+}
+
+/**
+ * A, B, C and D - three or more single words joined by commas.
+ *
+ * The lookahead matters: without it the comma group swallows the ", and" and
+ * treats "and" as a list item, which rebuilds the phrase as "depict and and".
+ */
+const CHAIN =
+  /\b([A-Za-z]+)((?:,\s*(?!and\b|or\b)[A-Za-z]+){1,4})(?:,?\s+(?:and|or)\s+([A-Za-z]+))?/g;
+
+/**
+ * Collapse a run of synonyms to its first word.
+ *
+ * Only members of the SAME group as the first word are dropped, so a mixed
+ * list keeps everything the list actually adds.
+ */
+function collapseSynonyms(text: string): { text: string; removed: Removal[] } {
+  const removed: Removal[] = [];
+  const next = text.replace(CHAIN, (match, head: string, middle: string, last: string | undefined) => {
+    const group = groupOf(head);
+    if (!group) return match;
+    const items = [
+      head,
+      ...middle.split(",").map((p) => p.trim()).filter(Boolean),
+      ...(last ? [last] : []),
+    ].filter((w) => w.toLowerCase() !== "and" && w.toLowerCase() !== "or");
+    const duplicates = items.slice(1).filter((w) => group.includes(w.toLowerCase()));
+    if (duplicates.length === 0) return match;
+    const kept = items.filter((w, i) => i === 0 || !group.includes(w.toLowerCase()));
+    removed.push({
+      text: match,
+      why: `Says the same thing ${duplicates.length + 1} ways. "${head}" already covers it.`,
+    });
+    // Rebuilt from `kept` alone: reusing any part of the original leaves the
+    // conjunction behind, which is how "depict and and display" happens.
+    if (kept.length === 1) return kept[0]!;
+    if (kept.length === 2) return `${kept[0]} and ${kept[1]}`;
+    return `${kept.slice(0, -1).join(", ")} and ${kept[kept.length - 1]}`;
+  });
+  return { text: next, removed };
+}
+
 const DUPLICATE_JACCARD = 0.8;
 /** Floor for FUZZY matching only: short list items legitimately share wording. */
 const DUPLICATE_MIN_WORDS = 6;
@@ -445,6 +527,16 @@ export function rewritePrompt(
     const definitions = stripDefinitions(text, prompt);
     text = definitions.text;
     politenessRemovals.push(...definitions.removed);
+
+    const synonyms = collapseSynonyms(text);
+    text = synonyms.text;
+    politenessRemovals.push(...synonyms.removed);
+
+    const deEmphasised = text.replace(INTENSIFIERS, "");
+    if (deEmphasised !== text) {
+      politenessRemovals.push({ text: text.trim(), why: "Intensifiers add emphasis, not information." });
+      text = deEmphasised;
+    }
     for (const strip of PHRASE_STRIPS) {
       if (strip.re.test(text)) {
         const before = text;
@@ -534,10 +626,17 @@ export function rewritePrompt(
   };
 }
 
+/** Removing a word can leave "a undamaged". Re-pick the article to match. */
+function fixArticles(text: string): string {
+  return text
+    .replace(/\ba\s+(?=[aeiou])/gi, (m) => (m[0] === "A" ? "An " : "an "))
+    .replace(/\ban\s+(?=[^aeiou\s])/gi, (m) => (m[0] === "A" ? "A " : "a "));
+}
+
 function tidy(text: string): string {
   // Removing "please" from "DNS, please?" leaves a stray comma before the
   // terminator. Drop commas and spaces that sit directly before a full stop.
-  let t = text
+  let t = fixArticles(text)
     .trim()
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1")

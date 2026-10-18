@@ -73,3 +73,43 @@ test("a single 'which is' clause is left alone, because it usually carries meani
   const r = rewritePrompt("Explain the PJM grid, which is the market my data centre buys from.");
   assert.match(r.rewritten, /which is the market/i);
 });
+
+test("synonym chains collapse, and genuine lists are left alone", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  assert.equal(
+    rewritePrompt("What does it depict, show, illustrate, and display visually?").rewritten,
+    "What does it depict visually?",
+  );
+  // A real list is not padding: collapsing it would delete what was asked for.
+  const list = "Buy milk, eggs, and bread from the shop and tell me the total.";
+  assert.equal(rewritePrompt(list).rewritten, list);
+});
+
+test("trimming never leaves a doubled conjunction or a wrong article", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  for (const prompt of [
+    "What does it depict, show, illustrate, and display?",
+    "Find a totally undamaged, completely unruined, perfectly intact reel.",
+    "Describe the sealed, closed, shut container.",
+  ]) {
+    const out = rewritePrompt(prompt).rewritten;
+    assert.doesNotMatch(out, /\band\s+and\b/i, out);
+    assert.doesNotMatch(out, /\ba\s+[aeiou]/i, out);
+    assert.doesNotMatch(out, /\s,|,,/, out);
+  }
+});
+
+test("trimming a padded prompt keeps every piece of real content", async () => {
+  const { rewritePrompt } = await import("../src/rewrite.ts");
+  const padded =
+    "A sealed, closed off, tightly shut titanium cylinder was discovered beneath the ice, " +
+    "which is frozen water, at a Soviet base, which is a research station, in Antarctica, " +
+    "which is a continent. What does it reveal, disclose, and uncover about the Space Race? " +
+    "Answer in exactly 3 sentences.";
+  const r = rewritePrompt(padded);
+  assert.ok(r.tokenDelta < 0, `expected shrinkage, got ${r.tokenDelta}`);
+  for (const kept of ["discovered", "Antarctica", "Soviet", "Space Race", "exactly 3 sentences", "titanium"]) {
+    assert.match(r.rewritten, new RegExp(kept, "i"), `lost "${kept}" from: ${r.rewritten}`);
+  }
+  assert.deepEqual(r.added, [], "a prompt that states its length must get no second one");
+});
