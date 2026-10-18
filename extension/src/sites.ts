@@ -37,22 +37,47 @@ export interface SiteConfig {
   defaultModelClass: "small" | "medium" | "large";
 }
 
+/**
+ * Probed against the live site on 18 Oct 2026. What changed since the first
+ * version, all of it confirmed by running the probe in a real conversation:
+ *
+ *   - `#prompt-textarea` no longer exists. The composer is now a contenteditable
+ *     carrying `data-virtualkeyboard`.
+ *   - Every message-level data attribute is gone: no `data-message-author-role`,
+ *     no `data-message-id`, no `data-testid` on turns, no `.markdown`.
+ *   - Assistant content is now a `prose` class; user content is marked with
+ *     `user-message` and the text itself is `.text-size-chat.whitespace-pre-wrap`.
+ *   - `data-talvt-turn-state` wraps a whole exchange rather than one message, so
+ *     it cannot separate the two speakers and is not used here.
+ *
+ * The old selectors are kept below the new ones rather than deleted: they cost
+ * nothing when they miss, and they make the adapter work on whichever build a
+ * given machine is served. `block-BQZwFn`-style hashed classes are deliberately
+ * not used; they change on every deploy.
+ */
 const CHATGPT: SiteConfig = {
   id: "chatgpt",
   label: "ChatGPT",
   hosts: ["chatgpt.com", "chat.openai.com"],
   composer: [
-    "#prompt-textarea",
     "div[contenteditable='true'][data-virtualkeyboard]",
+    "#prompt-textarea",
     "form div[contenteditable='true']",
+    "div[contenteditable='true']",
     "form textarea",
   ],
   conversationRoot: ["main", "div[role='presentation']"],
   assistantMessage: [
     "[data-message-author-role='assistant']",
+    "[class*='markdown']",
+    "[class*='prose']",
     "div[data-testid^='conversation-turn'] .markdown",
   ],
-  userMessage: ["[data-message-author-role='user']"],
+  userMessage: [
+    "[data-message-author-role='user']",
+    "[class*='user-message']",
+    ".text-size-chat.whitespace-pre-wrap",
+  ],
   defaultModelClass: "large",
 };
 
@@ -310,9 +335,24 @@ export function pick<T extends Element>(
 export function pickAll<T extends Element>(root: ParentNode, selectors: string[]): T[] {
   for (const sel of selectors) {
     const found = Array.from(root.querySelectorAll<T>(sel));
-    if (found.length > 0) return found;
+    if (found.length > 0) return innermost(found);
   }
   return [];
+}
+
+/**
+ * Drop any match that contains another match.
+ *
+ * The selectors that still work on current chat sites are class-substring
+ * matches like `[class*='prose']`, and those happily match a wrapper as well as
+ * the message inside it. Without this, one receipt gets pinned to an element
+ * wrapping the whole conversation and every reply after it is skipped as
+ * already seen. Keeping only the innermost matches makes a selector that is
+ * too broad degrade into one that is merely imprecise.
+ */
+export function innermost<T extends Element>(els: T[]): T[] {
+  if (els.length < 2) return els;
+  return els.filter((el) => !els.some((other) => other !== el && el.contains(other)));
 }
 
 /** Read text from a textarea or a contenteditable, whichever this is. */

@@ -17,7 +17,14 @@
  * stay local unless the user explicitly connects account sync.
  */
 
-import type { Config, Estimate, Flag, ModelClass, Range } from "../../packages/core/src/index.ts";
+import type {
+  Config,
+  Estimate,
+  Flag,
+  ModelClass,
+  Range,
+  WasteProfile,
+} from "../../packages/core/src/index.ts";
 import {
   FirestoreClient,
   analyze,
@@ -28,8 +35,10 @@ import {
   pushUsageEvent,
   refreshLeaderboardRow,
   rewritePrompt,
+  stableHash,
   suggestModel,
   syncUsageEvent,
+  wasteProfileOf,
   type AuthSession,
   type FirebaseWebConfig,
 } from "../../packages/core/src/index.ts";
@@ -65,6 +74,15 @@ let session: AuthSession | null = null;
 let firebase: FirebaseWebConfig | null = null;
 let client: FirestoreClient | null = null;
 
+/**
+ * What this user's replies waste tokens on, by type.
+ *
+ * Counts only, never text, so it is safe to keep. It is what makes the
+ * directions specific: someone whose model restates every question gets told
+ * to stop doing that, instead of the same generic line as everybody else.
+ */
+let wasteProfile: WasteProfile = {};
+
 function readSession(value: unknown): AuthSession | null {
   const candidate = value as Partial<AuthSession> | undefined;
   return candidate?.uid && candidate.refreshToken && candidate.idToken
@@ -79,10 +97,11 @@ function readSession(value: unknown): AuthSession | null {
 
 function loadSettings(): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage?.local.get(["autoDirections", "pfSession"], (s) => {
+    chrome.storage?.local.get(["autoDirections", "pfSession", "wasteByType"], (s) => {
       autoDirections = s["autoDirections"] === true;
       session = readSession(s["pfSession"]);
       client = null;
+      wasteProfile = (s["wasteByType"] as WasteProfile) ?? {};
       resolve();
     });
   });
@@ -102,6 +121,12 @@ function firestore(): FirestoreClient | null {
     },
   });
   return client;
+}
+
+/** Turn auto-apply off and remember it, so the setting survives a reload. */
+function disableAutoDirections(): void {
+  autoDirections = false;
+  chrome.storage?.local.set({ autoDirections: false });
 }
 
 // --- setup ------------------------------------------------------------------
@@ -176,6 +201,18 @@ let nudgeEl: HTMLDivElement | null = null;
  * takes that back.
  */
 let pendingUndo: { original: string } | null = null;
+/**
+ * Set when the user undoes an auto-add, cleared once the composer empties.
+ *
+ * Without it the undo undoes itself: writing the original text back fires an
+ * input event, the debounce runs again, auto-apply sees a draft with no
+ * directions and appends them a second time. From the user's side the Undo
+ * button simply does not work.
+ *
+ * Emptying the composer is the closest thing to "message sent" that works on
+ * every site, and it is the right moment to start offering again.
+ */
+let autoSuppressed = false;
 let debounce: number | undefined;
 /** Short drafts are noise; nobody needs advice on "thanks". */
 const MIN_DRAFT_WORDS = 12;
@@ -210,17 +247,23 @@ function evaluateDraft(composer: Element): void {
   const draft = readComposer(composer).trim();
 
   if (draft.split(/\s+/).filter(Boolean).length < MIN_DRAFT_WORDS) {
+    // The draft is gone or barely started: forget the last one entirely.
     removeNudge();
+    pendingUndo = null;
+    autoSuppressed = false;
     return;
   }
 
-  const rewrite = rewritePrompt(draft);
+  const rewrite = rewritePrompt(draft, undefined, { wasteProfile });
   const suggestion = suggestModel(draft, config, site.defaultModelClass);
 
   // Auto-apply the safe half: append the output directions if they are not
   // already there. Done visibly, in the composer, so the user can see and
   // delete it. Silent modification is what makes auto-apply untrustworthy.
-  if (autoDirections && rewrite.added.length > 0 && !containsDirections(draft, rewrite.added)) {
+  //
+  // rewrite.added is empty when the directions are already in the draft, so
+  // this cannot append them twice.
+  if (autoDirections && !autoSuppressed && rewrite.added.length > 0) {
     const withDirections = `${draft} ${rewrite.added.join(" ")}`.trim();
     pendingUndo = { original: draft };
     setComposerText(composer, withDirections);
@@ -228,28 +271,36 @@ function evaluateDraft(composer: Element): void {
     return;
   }
 
-  // Directions are gone (user deleted them, or cleared the box): the stored
-  // undo point no longer describes anything, so drop it.
-  if (!containsDirections(draft, rewrite.added)) pendingUndo = null;
+  // The directions are gone again (the user deleted them): the stored undo
+  // point no longer describes anything, so drop it.
+  if (rewrite.added.length > 0) pendingUndo = null;
+
+  // Offer the button only when pressing it would actually change the draft.
+  // Offering a rewrite identical to what is already typed is how the old
+  // version invited the same click over and over.
+  const canRewrite = normalizeWs(rewrite.rewritten) !== normalizeWs(draft);
 
   // Only interrupt when there is something worth saying.
-  const worthShowing = rewrite.removed.length > 0 || suggestion.isDowngrade;
-  if (!worthShowing) {
+  if (!canRewrite && !suggestion.isDowngrade) {
     removeNudge();
     return;
   }
 
   showNudge(composer, {
+    canRewrite,
     tokenDelta: rewrite.tokenDelta,
     removedCount: rewrite.removed.length,
+    added: rewrite.added,
     rewritten: rewrite.rewritten,
     suggestion,
   });
 }
 
 interface NudgeData {
+  canRewrite: boolean;
   tokenDelta: number;
   removedCount: number;
+  added: string[];
   rewritten: string;
   suggestion: ReturnType<typeof suggestModel>;
 }
@@ -260,10 +311,21 @@ function showNudge(composer: Element, data: NudgeData): void {
   box.className = "owo-nudge";
 
   const bits: string[] = [];
-  if (data.removedCount > 0) {
-    const shorter = data.tokenDelta < 0 ? `${Math.abs(data.tokenDelta)} tokens shorter` : "tighter";
+  if (data.canRewrite) {
+    // Say what the button will do. "Trim" on a prompt that only gains output
+    // directions would be a lie, and the token count has to match the direction
+    // of travel or the next click feels broken.
+    const action =
+      data.removedCount === 0
+        ? "Add output limits"
+        : data.tokenDelta < 0
+          ? `Trim prompt (${Math.abs(data.tokenDelta)} tokens shorter)`
+          : "Tidy prompt";
+    // The tooltip names the exact directions, so the button is not a black box
+    // and the user can see they change with the prompt.
+    const willAdd = data.added.length > 0 ? `Adds: ${data.added.join(" ")}` : "Trims your prompt only.";
     bits.push(
-      `<button class="owo-btn" data-owo-apply="1">Trim prompt (${escapeHtml(shorter)})</button>`,
+      `<button class="owo-btn" data-owo-apply="1" title="${escapeHtml(willAdd)}">${escapeHtml(action)}</button>`,
     );
   }
   if (data.suggestion.isDowngrade) {
@@ -280,7 +342,7 @@ function showNudge(composer: Element, data: NudgeData): void {
   }
 
   const undoBit = pendingUndo
-    ? `<button class="owo-btn owo-ghost" data-owo-undo="1">Undo auto-add</button>`
+    ? `<button class="owo-btn owo-ghost" data-owo-undo="1" title="Puts your draft back and turns auto-add off.">Undo auto-add</button>`
     : "";
 
   box.innerHTML = `
@@ -293,6 +355,7 @@ function showNudge(composer: Element, data: NudgeData): void {
     e.preventDefault();
     const original = pendingUndo?.original;
     pendingUndo = null;
+    undoAutoApply();
     if (original !== undefined) setComposerText(composer, original);
     removeNudge();
   });
@@ -310,10 +373,21 @@ function showNudge(composer: Element, data: NudgeData): void {
   nudgeEl = box;
 }
 
-/** Cheap idempotence check, so a pause in typing cannot append twice. */
-function containsDirections(draft: string, added: string[]): boolean {
-  const hay = draft.toLowerCase();
-  return added.every((line) => hay.includes(line.toLowerCase().slice(0, 24)));
+/**
+ * What Undo means: put the draft back, and stop adding it.
+ *
+ * Restoring the text fires an input event, which restarts the debounce, which
+ * would auto-apply again a moment later — so an undo that only restores text
+ * visibly undoes itself. Suppressing it in memory fixes that for this draft;
+ * turning the setting off is what stops the loop coming back on the next one,
+ * and survives the content script being re-injected on an SPA navigation.
+ *
+ * Undoing an automatic edit is a clear "do not do that", so the setting goes
+ * off and the user gets the button instead. The popup toggle turns it back on.
+ */
+function undoAutoApply(): void {
+  autoSuppressed = true;
+  disableAutoDirections();
 }
 
 /** Says what was added and offers one-click undo. Visible beats silent. */
@@ -324,11 +398,12 @@ function showAutoNote(composer: Element, added: string, original: string): void 
   box.innerHTML = `
     <span class="owo-tag">added automatically</span>
     <span class="owo-pill">${escapeHtml(added)}</span>
-    <button class="owo-btn" data-owo-undo="1">Undo</button>
+    <button class="owo-btn" data-owo-undo="1" title="Puts your draft back and turns auto-add off.">Undo &amp; stop</button>
     <button class="owo-x" data-owo-dismiss="1" title="Dismiss">&times;</button>`;
   box.querySelector("[data-owo-undo]")?.addEventListener("click", (e) => {
     e.preventDefault();
     pendingUndo = null;
+    undoAutoApply();
     setComposerText(composer, original);
     removeNudge();
   });
@@ -395,17 +470,36 @@ function normalizeWs(s: string): string {
 
 const seen = new WeakSet<Element>();
 
-function watchReplies(): void {
-  const { el: root } = pick<HTMLElement>(document, site.conversationRoot);
-  const target = root ?? document.body;
+/**
+ * Hashes of replies already counted, so a re-render cannot count one twice.
+ *
+ * `seen` keys on the element, which is not enough: these apps rebuild the
+ * conversation from scratch when you switch chats and come back, producing new
+ * elements holding the same text. Without this the totals climb on their own,
+ * and a footprint tool whose numbers inflate when you navigate is worse than
+ * no tool. Hashes, not text, so nothing readable is held in memory.
+ */
+const countedText = new Set<string>();
 
+function watchReplies(): void {
+  // Observe document.body, not the conversation root.
+  //
+  // These sites are single-page apps: sending the first message navigates from
+  // the new-chat view to /c/<id>, and the framework swaps out the <main>
+  // element on the way. An observer bound to the root found at boot is then
+  // watching a node that is no longer in the page, so no reply ever arrives and
+  // the extension looks dead while every selector it uses is perfectly correct.
+  //
+  // body is the one node the app never replaces. The extra mutations it sees
+  // cost nothing here, because the work is debounced and scanReplies only acts
+  // on messages it has not already measured.
   const observer = new MutationObserver(() => {
     window.clearTimeout(replyDebounce);
     // Replies stream in token by token. Waiting for a quiet moment means we
     // measure the finished answer instead of a half-written one.
     replyDebounce = window.setTimeout(scanReplies, 700);
   });
-  observer.observe(target, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   scanReplies();
 }
 
@@ -422,7 +516,22 @@ function scanReplies(): void {
     if (text.length < 40) continue;
     if (isProviderError(text)) continue;
     seen.add(msg);
-    attachReceipt(msg, text, promptBefore(msg, prompts));
+
+    // Same reply, new element: a re-render, not a new answer. The receipt is
+    // drawn again so it does not vanish when you switch chats and come back,
+    // but nothing is added to the totals.
+    const fingerprint = stableHash(text);
+    const alreadyCounted = countedText.has(fingerprint);
+    countedText.add(fingerprint);
+
+    attachReceipt(msg, text, promptBefore(msg, prompts), alreadyCounted);
+
+    // A reply means the draft was sent. Clear the pre-send bar, which is
+    // pinned over the composer and otherwise sits on top of the new receipt,
+    // and start offering again on the next draft.
+    removeNudge();
+    pendingUndo = null;
+    autoSuppressed = false;
   }
 }
 
@@ -450,7 +559,12 @@ function promptBefore(message: Element, prompts: HTMLElement[]): string {
   return nearest;
 }
 
-function attachReceipt(msg: HTMLElement, response: string, prompt: string): void {
+function attachReceipt(
+  msg: HTMLElement,
+  response: string,
+  prompt: string,
+  alreadyCounted = false,
+): void {
   if (!config) return;
 
   const result = analyze(response, prompt);
@@ -508,6 +622,19 @@ function attachReceipt(msg: HTMLElement, response: string, prompt: string): void
   }
 
   msg.appendChild(bar);
+
+  // A redraw of a reply already measured: the receipt above is shown again,
+  // but counting it a second time would be a lie.
+  if (alreadyCounted) return;
+
+  // Learn from this reply straight away, so the next draft's directions already
+  // target whatever this one wasted tokens on.
+  const seenNow = wasteProfileOf(result.flags);
+  for (const [type, tokens] of Object.entries(seenNow)) {
+    const key = type as Flag["type"];
+    wasteProfile[key] = (wasteProfile[key] ?? 0) + (tokens ?? 0);
+  }
+
   bumpTotals(result.wastedOutputTokens, result.totalOutputTokens, est);
   void syncReceipt(prompt, result, est, modelClass);
 }
@@ -591,6 +718,8 @@ function bumpTotals(wasted: number, total: number, estimateForReply: Estimate): 
       wasted: (prev["wasted"] ?? 0) + wasted,
       total: (prev["total"] ?? 0) + total,
       replies: (prev["replies"] ?? 0) + 1,
+      // Counts per waste type, never text. This is what the directions read.
+      wasteByType: wasteProfile,
       resourcesTotal: addResources(prev["resourcesTotal"] as StoredResourceTotals | undefined, estimateForReply),
       resourcesWasted: addResources(
         prev["resourcesWasted"] as StoredResourceTotals | undefined,

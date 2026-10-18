@@ -3,8 +3,11 @@ node_modules/
 
 # Real grid data overwrites the seeded file; keep the seeded one committed so a
 # fresh clone has something to run on, but never commit a file containing a key.
+# `npm run grid` reads .env via node --env-file-if-exists.
 .env
 .env.*
+# ...except the template, which carries the instructions and never a real key.
+!.env.example
 
 # OS noise
 .DS_Store
