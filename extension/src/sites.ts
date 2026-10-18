@@ -206,6 +206,10 @@ const GROK: SiteConfig = {
     "[data-testid='user-message']",
     "[data-testid='message-bubble'][data-author='user']",
   ],
+  modelIndicator: [
+    "button[aria-label*='model' i]",
+    "[data-testid*='model-select' i]",
+  ],
   defaultModelClass: "large",
 };
 

@@ -6,39 +6,154 @@
     "sources": "OpenAI: developers.openai.com/api/docs/models and /models/all — Astra is described there as the flagship for complex reasoning and coding, Sol as the intelligence/cost balance, Luna for cost-sensitive high-volume work; gpt-6-astra has its own model page. Google: ai.google.dev/gemini-api/docs/changelog — gemini-4-argon reached GA on 13 Oct 2026 — plus the models page for the Flash and Flash-Lite ids. Anthropic: the Claude 5 family (Opus/Sonnet/Haiku 5.5).",
     "what_a_tier_means": "Tiers are ENERGY classes, not marketing names, and each points at a different e_out range in config/sources.json. Providers do not publish active parameter counts for closed models, so placing a product in an energy class is our inference rather than a vendor statement. That is why every figure derived from it is a range.",
     "recheck_before_the_demo": "Names move every few weeks. Two things to re-read on the morning: GPT-6 Astra was still rolling out through OpenAI's Trusted Access Program, so it may not be callable on every account, and the model-retrieve reference page shows a shutdown_date of 2026-10-23 which looks like sample data rather than a real retirement for a six-week-old flagship. Confirm both. A judge who uses these tools daily will spot a dead model name faster than anything else on screen.",
-    "rule": "The product never switches models. These only drive a suggestion the user accepts or ignores."
+    "rule": "The product never switches models. These only drive a suggestion the user accepts or ignores.",
+    "grok_status": "Added from third-party sources that disagree on the newest model. Every Grok name is unverified; check xAI's /models endpoint before quoting one."
   },
   "tiers": [
-    { "id": "small",  "label": "Small",  "energy_key": "e_out_small",  "description": "Classification, extraction, translation, reformatting, grammar fixes.", "examples": ["GPT-6 Luna", "Claude Haiku 5.5", "Gemini 3.5 Flash-Lite"], "verified": true },
-    { "id": "medium", "label": "Medium", "energy_key": "e_out_medium", "description": "Summaries, drafting, straightforward questions, light code.", "examples": ["GPT-6 Sol", "Claude Sonnet 5.5", "Gemini 3.8 Flash"], "verified": true },
-    { "id": "large",  "label": "Large",  "energy_key": "e_out_large",  "description": "Hard reasoning, long multi-step work, architecture, debugging across many files, proofs.", "examples": ["GPT-6 Astra", "Claude Opus 5.5", "Gemini 4 Argon"], "verified": true }
+    {
+      "id": "small",
+      "label": "Small",
+      "energy_key": "e_out_small",
+      "description": "Classification, extraction, translation, reformatting, grammar fixes.",
+      "examples": [
+        "GPT-6 Luna",
+        "Claude Haiku 5.5",
+        "Gemini 3.5 Flash-Lite"
+      ],
+      "verified": true
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "energy_key": "e_out_medium",
+      "description": "Summaries, drafting, straightforward questions, light code.",
+      "examples": [
+        "GPT-6 Sol",
+        "Claude Sonnet 5.5",
+        "Gemini 3.8 Flash"
+      ],
+      "verified": true
+    },
+    {
+      "id": "large",
+      "label": "Large",
+      "energy_key": "e_out_large",
+      "description": "Hard reasoning, long multi-step work, architecture, debugging across many files, proofs.",
+      "examples": [
+        "GPT-6 Astra",
+        "Claude Opus 5.5",
+        "Gemini 4 Argon"
+      ],
+      "verified": true
+    }
   ],
   "platforms": [
     {
       "id": "claude",
       "label": "Claude",
       "tiers": {
-        "small":  { "model": "claude-haiku-5-5",  "effort": "low",    "verified": true,  "effort_verified": false, "note": "Fast tier for lookups, renames and simple rewrites." },
-        "medium": { "model": "claude-sonnet-5-5", "effort": "medium", "verified": true,  "effort_verified": false, "note": "Everyday work and light code." },
-        "large":  { "model": "claude-opus-5-5",   "effort": "high",   "verified": true,  "effort_verified": false, "note": "Hard reasoning and multi-file debugging. Effort levels reported for Opus 5: low, medium, high, xhigh, max. Some guides suggest xhigh for coding; check the official release page." }
+        "small": {
+          "model": "claude-haiku-5-5",
+          "effort": "low",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Fast tier for lookups, renames and simple rewrites."
+        },
+        "medium": {
+          "model": "claude-sonnet-5-5",
+          "effort": "medium",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Everyday work and light code."
+        },
+        "large": {
+          "model": "claude-opus-5-5",
+          "effort": "high",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Hard reasoning and multi-file debugging. Effort levels reported for Opus 5: low, medium, high, xhigh, max. Some guides suggest xhigh for coding; check the official release page."
+        }
       }
     },
     {
       "id": "gemini",
       "label": "Gemini",
       "tiers": {
-        "small":  { "model": "gemini-3.5-flash-lite", "effort": "low",  "verified": true, "effort_verified": false, "note": "Cost-focused tier, listed on the Gemini API models page. Thinking level is set with thinking_level." },
-        "medium": { "model": "gemini-3.8-flash",      "effort": "low",  "verified": true, "effort_verified": false, "note": "Stable Flash model. Replaces gemini-3-flash, which is no longer in the lineup." },
-        "large":  { "model": "gemini-4-argon",        "effort": "high", "verified": true, "effort_verified": false, "note": "Flagship reasoning model, generally available 13 Oct 2026. Replaces gemini-3.1-pro. Confirm the thinking_level values for this model before quoting the effort." }
+        "small": {
+          "model": "gemini-3.5-flash-lite",
+          "effort": "low",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Cost-focused tier, listed on the Gemini API models page. Thinking level is set with thinking_level."
+        },
+        "medium": {
+          "model": "gemini-3.8-flash",
+          "effort": "low",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Stable Flash model. Replaces gemini-3-flash, which is no longer in the lineup."
+        },
+        "large": {
+          "model": "gemini-4-argon",
+          "effort": "high",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Flagship reasoning model, generally available 13 Oct 2026. Replaces gemini-3.1-pro. Confirm the thinking_level values for this model before quoting the effort."
+        }
       }
     },
     {
       "id": "chatgpt",
       "label": "ChatGPT",
       "tiers": {
-        "small":  { "model": "gpt-6-luna",  "effort": "minimal", "verified": true, "effort_verified": false, "note": "OpenAI's docs point here for cost-sensitive, high-volume work, and name it as the replacement for the GPT-4 models retiring in January 2027." },
-        "medium": { "model": "gpt-6-sol",   "effort": "low",     "verified": true, "effort_verified": false, "note": "Described in OpenAI's docs as the balance of intelligence and cost. A GPT-6.1 Sol point release also exists; check which your plan exposes." },
-        "large":  { "model": "gpt-6-astra", "effort": "high",    "verified": true, "effort_verified": false, "note": "Flagship for complex reasoning and coding, with its own model page. Was still rolling out via the Trusted Access Program, so it may not be callable on every account yet." }
+        "small": {
+          "model": "gpt-6-luna",
+          "effort": "minimal",
+          "verified": true,
+          "effort_verified": false,
+          "note": "OpenAI's docs point here for cost-sensitive, high-volume work, and name it as the replacement for the GPT-4 models retiring in January 2027."
+        },
+        "medium": {
+          "model": "gpt-6-sol",
+          "effort": "low",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Described in OpenAI's docs as the balance of intelligence and cost. A GPT-6.1 Sol point release also exists; check which your plan exposes."
+        },
+        "large": {
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "verified": true,
+          "effort_verified": false,
+          "note": "Flagship for complex reasoning and coding, with its own model page. Was still rolling out via the Trusted Access Program, so it may not be callable on every account yet."
+        }
+      }
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "tiers": {
+        "small": {
+          "model": "grok-4.1-fast",
+          "effort": "low",
+          "verified": false,
+          "effort_verified": false,
+          "note": "Cheapest tier per OpenRouter and two aggregators; 2M context. Exact API id not confirmed."
+        },
+        "medium": {
+          "model": "grok-4.3",
+          "effort": "low",
+          "verified": false,
+          "effort_verified": false,
+          "note": "Low-cost tier in one 2026 guide; API release Apr 2026. Exact API id not confirmed."
+        },
+        "large": {
+          "model": "grok-4.5",
+          "effort": "high",
+          "verified": false,
+          "effort_verified": false,
+          "note": "Newest release named by several guides, but Grok 4.7 is also reported and is disputed. Confirm on xAI's /models endpoint."
+        }
       }
     }
   ],
