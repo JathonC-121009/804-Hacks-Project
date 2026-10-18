@@ -71,8 +71,8 @@ test("CLI run automatically fixes the prompt before invoking an arbitrary AI com
     { encoding: "utf8" },
   );
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /AI received: Explain DNS Answer directly\./);
-  assert.match(run.stdout, /No preamble, no closing offer, no recap\./);
+  assert.match(run.stdout, /AI received: Explain DNS/);
+  assert.doesNotMatch(run.stdout, /No preamble, no closing offer, no recap/);
   assert.match(run.stderr, /Auto-fix applied:/);
   assert.match(run.stderr, /Suggested model:/);
   assert.match(run.stderr, /Efficiency/);

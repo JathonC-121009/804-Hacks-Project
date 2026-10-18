@@ -21,6 +21,7 @@ import { rewritePrompt } from "./rewrite.ts";
 import { footprintDeltaForResponse, suggestModel } from "./suggestModel.ts";
 import { intensityForHour, type IntensityLookup } from "./grid.ts";
 import { estimateTokens } from "./tokens.ts";
+import { adviseOnPrompt, type PromptAdvice } from "./advice.ts";
 
 export * from "./types.ts";
 export { analyze, detect } from "./detect.ts";
@@ -57,6 +58,7 @@ export {
   parseGridData,
   type IntensityLookup,
 } from "./grid.ts";
+export { adviseOnPrompt, type AdviceKind, type PromptAdvice } from "./advice.ts";
 export { DEFAULT_BASELINE, describeBaseline, efficiencyOf, weeklyCard, wastedTokensOf } from "./card.ts";
 export { emptyTokenCounts, estimateTokens, outputTokens, totalTokens } from "./tokens.ts";
 export { countWords, mergeIntervals, splitSentences, stableHash } from "./text.ts";
@@ -134,6 +136,8 @@ export interface FullAnalysis {
   rewrite: RewriteResult;
   suggestion: ModelSuggestion;
   suggestionDeltaForThisResponse: ReturnType<typeof footprintDeltaForResponse>;
+  /** Checks on the prompt itself: what it lacks and what to change. */
+  promptAdvice: PromptAdvice[];
   grid: IntensityLookup;
   /** Everything that must be fixed before this is shown to judges. */
   configWarnings: ConfigWarning[];
@@ -218,6 +222,7 @@ export function runFullAnalysis(input: FullAnalysisInput, config: Config): FullA
       analysis.totalOutputTokens,
     ),
     grid,
+    promptAdvice: adviseOnPrompt(input.prompt),
     configWarnings: auditConfig(config),
   };
 }

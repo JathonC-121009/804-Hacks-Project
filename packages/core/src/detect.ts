@@ -13,6 +13,7 @@ import {
   ngramOverlap,
   normalize,
   splitSentences,
+  words,
   type Span,
 } from "./text.ts";
 import { estimateTokens, outputTokens } from "./tokens.ts";
@@ -220,17 +221,33 @@ function detectRecap(sentences: Span[], response: string): Flag[] {
     // Flag the marker through the end of its paragraph.
     const paraEnd = findParagraphEnd(response, s.start);
     const end = Math.max(s.end, paraEnd);
+    const restated = restatementShare(response.slice(s.start, end), response.slice(0, s.start));
+    // A recap that only repeats earlier words is waste we can show. A recap
+    // that adds new content is a judgment call, so it stays advisory.
+    const measurable = restated >= RECAP_RESTATED_SHARE;
     flags.push({
       type: "recap",
-      confidence: "advisory",
+      confidence: measurable ? "high" : "advisory",
       tokens: estimateTokens(response.slice(s.start, end)).tokens,
       start: s.start,
       end,
       excerpt: excerpt(response.slice(s.start, end)),
-      why: "Repeats what was just said. Advisory only: some recaps are genuinely useful, so this is not scored.",
+      why: measurable
+        ? `Restates what was already said (${Math.round(restated * 100)}% of its words appear earlier). Scored.`
+        : "Adds a closing summary. Advisory only: some recaps are useful, so this is not scored.",
     });
   }
   return flags;
+}
+
+/** Share of a recap's content words that already appear earlier in the reply. */
+const RECAP_RESTATED_SHARE = 0.6;
+
+function restatementShare(recap: string, earlier: string): number {
+  const earlierWords = new Set(words(earlier));
+  const content = words(recap).filter((w) => w.length > 3);
+  if (content.length === 0) return 0;
+  return content.filter((w) => earlierWords.has(w)).length / content.length;
 }
 
 function findParagraphEnd(text: string, from: number): number {
@@ -290,6 +307,57 @@ function detectOverlength(response: string, prompt: string): Flag[] {
       end: 0,
       excerpt: "",
       why: `A ${p}-word question produced a ${r}-word answer (${Math.round(ratio)}x). Advisory and unscored: length is not waste by itself, and we cannot tell from text alone how much of it you needed.`,
+    },
+  ];
+}
+
+// --- length against a stated target (scored) --------------------------------
+
+/**
+ * The word count the prompt asked for, when it asked for one.
+ *
+ * Only explicit numbers count. "Briefly" has no measurable target, so it is not
+ * scored; a number the person wrote is the only length we can defend.
+ */
+export function lengthTargetWords(prompt: string): number | null {
+  const sentences = prompt.match(/\b(\d+)\s+sentences?\b/i);
+  if (sentences) return Number(sentences[1]) * 20;
+  const bullets = prompt.match(/\b(\d+)\s+(?:bullets?|bullet points?|points?|items?)\b/i);
+  if (bullets) return Number(bullets[1]) * 15;
+  const words = prompt.match(/\b(?:under|within|at most|no more than|max(?:imum)?|in)\s+(\d+)\s+words?\b/i);
+  if (words) return Number(words[1]);
+  if (/\bone sentence\b/i.test(prompt)) return 25;
+  if (/\bone word\b/i.test(prompt)) return 1;
+  return null;
+}
+
+/** Tolerance over the target before the excess counts as waste. */
+const LENGTH_TOLERANCE = 1.25;
+
+function detectLengthOverrun(response: string, prompt: string): Flag[] {
+  const target = lengthTargetWords(prompt);
+  if (target === null) return [];
+  const allowance = Math.ceil(target * LENGTH_TOLERANCE);
+  let count = 0;
+  let cut = -1;
+  for (const match of response.matchAll(/\S+/g)) {
+    count += 1;
+    if (count > allowance) {
+      cut = match.index ?? 0;
+      break;
+    }
+  }
+  if (cut < 0) return [];
+  const total = countWords(response);
+  return [
+    {
+      type: "overlength",
+      confidence: "high",
+      tokens: estimateTokens(response.slice(cut)).tokens,
+      start: cut,
+      end: response.length,
+      excerpt: excerpt(response.slice(cut)),
+      why: `Your prompt asked for about ${target} words; this reply is ${total}. The part past the allowance is scored as waste.`,
     },
   ];
 }
@@ -398,6 +466,7 @@ export function detect(response: string, prompt = ""): DetectResult {
     ...detectRecap(sentences, response),
     ...detectBoilerplate(sentences),
     ...detectOverlength(response, prompt),
+    ...detectLengthOverrun(response, prompt),
   ];
   flags.sort((a, b) => a.start - b.start || a.end - b.end);
   return { flags, promptFlags: detectPromptSide(prompt) };
@@ -436,6 +505,7 @@ export function analyze(response: string, prompt = "", opts: AnalyzeOptions = {}
 
   const efficiency = total === 0 ? 1 : Math.max(0, Math.min(1, 1 - wastedOutputTokens / total));
 
+  const target = lengthTargetWords(prompt);
   return {
     flags,
     promptFlags,
@@ -443,5 +513,12 @@ export function analyze(response: string, prompt = "", opts: AnalyzeOptions = {}
     totalOutputTokens: total,
     efficiency,
     tokenSource: opts.tokenSource ?? (haveRealCounts ? "user_entered" : "estimated"),
+    coverage: {
+      lengthTargetWords: target,
+      note:
+        target === null
+          ? "Length was not scored: your prompt sets no word or sentence count. Add one (for example 'in 3 sentences') to measure it."
+          : `Length was scored against the ${target}-word target from your prompt.`,
+    },
   };
 }

@@ -232,6 +232,7 @@ function humanReport(result: FullAnalysis, color: boolean): string {
   ];
 
   const flags = [...analysis.flags, ...analysis.promptFlags];
+  const adviceLines = result.promptAdvice.map((a) => `  • ${a.why} ${a.suggestion}`);
   if (flags.length === 0) lines.push("  No high-confidence waste detected.");
   for (const flag of flags) {
     lines.push(`  • ${flag.type}: ${flag.why}${flag.excerpt ? ` ${dim(`“${flag.excerpt}”`)}` : ""}`);
@@ -239,6 +240,7 @@ function humanReport(result: FullAnalysis, color: boolean): string {
 
   lines.push(
     "",
+    ...(adviceLines.length ? [bold("Your prompt"), ...adviceLines, ""] : []),
     bold("Three fixes"),
     `  1. Standing instruction: ${result.instructionBlock.block || "No recurring waste pattern yet."}`,
     `  2. Shorter prompt: ${result.rewrite.rewritten}`,
@@ -248,6 +250,7 @@ function humanReport(result: FullAnalysis, color: boolean): string {
       (r) => `     ${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : dim(" (unchecked name)")}`,
     ),
     "",
+    dim(analysis.coverage.note),
     dim(`Grid: ${result.grid.source}. Estimates are ranges, not measurements.`),
   );
 

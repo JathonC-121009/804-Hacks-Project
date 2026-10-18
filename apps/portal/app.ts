@@ -7,6 +7,7 @@ import {
   rewritePrompt,
   runFullAnalysis,
   suggestModel,
+  adviseOnPrompt,
   syncUsageEvent,
   type Config,
   type FullAnalysis,
@@ -374,18 +375,39 @@ async function analyze(): Promise<void> {
   el("analysis-empty").hidden = true;
   el("analysis-content").hidden = false;
   el("rewrite-result").textContent = rewrite.rewritten;
-  el("model-result").textContent = [
-    suggestion.label,
-    ...suggestion.recommendations.map((r) => `${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : " (name not yet checked)"}`),
-  ].join("\n");
+  const advice = adviseOnPrompt(prompt);
+  el("advice-result").innerHTML = advice.length
+    ? advice.map((a) => `<div class="advice-item"><strong>${esc(a.quote)}</strong><p>${esc(a.why)}</p><p class="advice-fix">${esc(a.suggestion)}</p></div>`).join("")
+    : `<p class="advice-none">Nothing to change in how this prompt is written.</p>`;
+  el("model-result").innerHTML =
+    `<p class="model-headline">${esc(suggestion.label)} &middot; ${esc(suggestion.confidence)} confidence</p>` +
+    suggestion.recommendations
+      .map(
+        (r) =>
+          `<div class="model-row"><b>${esc(r.platform)}</b><code>${esc(r.model)}</code>` +
+          `<span class="effort">${esc(r.effort)} effort</span>` +
+          `${r.verified ? "" : '<span class="unchecked">name not checked</span>'}</div>`,
+      )
+      .join("");
   const before = estimateTokens(prompt).tokens;
   const after = estimateTokens(rewrite.rewritten).tokens;
-  el("detect-result").textContent = rewrite.removed.length > 0 ? `${rewrite.removed.length} unnecessary section${rewrite.removed.length === 1 ? "" : "s"} detected. Revised prompt: ${before} → ${after} estimated tokens.` : `The request is already focused. We added an output-control instruction to reduce response waste.`;
+  const sign = rewrite.tokenDelta > 0 ? "+" : "";
+  el("rewrite-delta").textContent =
+    `${before} → ${after} estimated input tokens (${sign}${rewrite.tokenDelta}).` +
+    (rewrite.tokenDelta > 0
+      ? " A few input tokens buy a length limit that usually removes far more output."
+      : "");
+  const trimmed = rewrite.removed.length;
+  el("detect-result").textContent = response
+    ? "Analyzing the response…"
+    : trimmed > 0
+      ? `Removed ${trimmed} unnecessary part${trimmed === 1 ? "" : "s"} from your prompt. Add the AI response to find waste in what the model writes back.`
+      : "Nothing to trim in your wording. Add the AI response to find waste in what the model writes back.";
 
   if (!response) {
     el("result-efficiency").textContent = "Prompt only";
     el("result-summary").textContent = "Suggestions are ready before you spend any tokens.";
-    el("measure-result").textContent = "Paste the AI response to calculate tokens, energy, water, CO₂, and cost.";
+    el("measure-result").textContent = "No response pasted, so nothing was measured. Add the AI answer to get tokens, energy, water, CO₂ and cost.";
     showToast("Prompt analyzed locally. Add a response to save a usage event.");
     return;
   }
@@ -424,7 +446,7 @@ async function analyze(): Promise<void> {
 function renderAnalysis(result: FullAnalysis): void {
   const pct = Math.round(result.analysis.efficiency * 100);
   el("result-efficiency").textContent = `${pct}%`;
-  el("result-summary").textContent = `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable.`;
+  el("result-summary").textContent = `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable. ${result.analysis.coverage.note}`;
   const energy = result.estimate.wasted.energyWh;
   const water = result.estimate.wasted.waterMl;
   const co2 = result.estimate.wasted.co2g;

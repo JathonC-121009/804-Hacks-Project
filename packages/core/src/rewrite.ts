@@ -1,6 +1,7 @@
 import type { DiffOp, FlagType, Removal, RewriteResult, TaskType, WasteProfile } from "./types.ts";
 import { countWords, jaccard, normalize, splitSentences, words } from "./text.ts";
 import { estimateTokens } from "./tokens.ts";
+import { hasLengthLimit, isMultiAsk, requestKind, type RequestKind } from "./advice.ts";
 
 /**
  * Per-prompt rewrite (plan section 5.4).
@@ -68,8 +69,9 @@ const TASK_DIRECTION: Record<TaskType, string> = {
   summarize: "Reply with at most 5 bullet points. No preamble, no closing line.",
   rewrite: "Reply with the rewritten text only.",
   code: "Reply with the code and at most one line of explanation. No preamble.",
-  reasoning: "Answer directly.",
-  general: "Answer directly.",
+  // No line for these two. "Answer directly." said nothing about the prompt.
+  reasoning: "",
+  general: "",
 };
 
 /** Task types whose direction says nothing about length, so the prompt may. */
@@ -96,7 +98,31 @@ const WASTE_DIRECTION: { type: FlagType; line: string }[] = [
  * covering the three commonest wastes: before we know anything about a user,
  * three separate lines would cost more tokens than the guess is worth.
  */
-const DEFAULT_DIRECTION = "No preamble, no closing offer, no recap.";
+
+/**
+ * The concrete length a plain request should carry, or null when the request
+ * should not be capped. Reasoning is never capped, and neither is a multi-part
+ * question: one cap over several asks would cut some of them short.
+ */
+const LENGTH_EDIT: Partial<Record<RequestKind, string>> = {
+  explain: "Answer in 3 sentences.",
+  write: "Keep it under 150 words.",
+  list: "Give 5 bullets.",
+  summarize: "Summarize in 3 bullets.",
+};
+
+function lengthEditFor(
+  prompt: string,
+  taskType: TaskType,
+  directions: string[],
+  withLength: boolean,
+): string | null {
+  if (!withLength || taskType === "reasoning" || hasLengthLimit(prompt) || isMultiAsk(prompt)) return null;
+  // A task direction that already caps length wins. Two limits in one prompt
+  // contradict each other and make it longer, which is the opposite of the job.
+  if (directions.some((line) => hasLengthLimit(line))) return null;
+  return LENGTH_EDIT[requestKind(prompt)] ?? null;
+}
 
 /** A length direction the prompt itself earns. Only used when the task type has none. */
 function lengthDirectionFor(prompt: string): string | null {
@@ -160,11 +186,9 @@ function chooseDirections(
   const fromWaste = wasteDirections(profile, taskType, MAX_DIRECTIONS - lines.length);
   if (fromWaste.length > 0) {
     lines.push(...fromWaste);
-  } else if (weak && lines.length < MAX_DIRECTIONS) {
-    // Only a weak base needs the catch-all. A task direction that already says
-    // "only" has covered it, and repeating that costs tokens on every message.
-    lines.push(DEFAULT_DIRECTION);
   }
+  // No generic catch-all here. A line that says "no preamble" whatever the
+  // prompt is not analysis; the advice module says what this prompt needs.
 
   return lines.slice(0, MAX_DIRECTIONS);
 }
@@ -173,6 +197,15 @@ function chooseDirections(
 
 /** Phrases removed inside a sentence that still carries the real instruction. */
 const PHRASE_STRIPS: { re: RegExp; why: string }[] = [
+  { re: /\bi was wondering if you could\s*/gi, why: "Politeness padding." },
+  { re: /\bcan you (?:please )?(?=(?:explain|describe|list|write|summari[sz]e|give|tell|compare|draft|suggest)\b)/gi, why: "Question framing: the instruction alone is clearer." },
+  { re: /\bcould you (?:please )?(?=(?:explain|describe|list|write|summari[sz]e|give|tell|compare|draft|suggest)\b)/gi, why: "Question framing: the instruction alone is clearer." },
+  { re: /\bi would like you to\s*/gi, why: "Filler: the instruction alone is clearer." },
+  { re: /\bi need you to\s*/gi, why: "Filler: the instruction alone is clearer." },
+  { re: /\bi want you to\s*/gi, why: "Filler: the instruction alone is clearer." },
+  { re: /,?\s*thanks in advance\b[!.]?/gi, why: "Pleasantry at the end of a sentence." },
+  { re: /,?\s*thank you\b[!.]?/gi, why: "Pleasantry at the end of a sentence." },
+  { re: /\b(?:basically|essentially|actually),?\s+/gi, why: "Filler word." },
   { re: /\bcould you (?:please |kindly )?/gi, why: "Politeness: the request is clear without it." },
   { re: /\bwould you (?:please |kindly )?/gi, why: "Politeness: the request is clear without it." },
   { re: /\bi was wondering if you could\s*/gi, why: "Politeness padding." },
@@ -331,6 +364,8 @@ export interface RewriteOptions {
   checkedAgainstExamples?: boolean;
   /** What this user's replies actually waste tokens on. Shapes the directions. */
   wasteProfile?: WasteProfile;
+  /** Add a concrete length to plain requests. On by default; the dashboard can switch it off. */
+  withLengthEdit?: boolean;
 }
 
 export function rewritePrompt(
@@ -423,15 +458,19 @@ export function rewritePrompt(
   // their prompt grow instead of shrink. It also means a user who already
   // writes "answer directly" themselves is not told to say it twice.
   const haystack = ` ${normalize(keptTexts.join(" "))} `;
-  const added = chooseDirections(
+  const directions = chooseDirections(
     prompt,
     taskType,
     flaggedContext.length > 0,
     opts.wasteProfile,
-  ).filter((line) => !haystack.includes(` ${normalize(line)} `));
+  ).filter((line) => line.length > 0 && !haystack.includes(` ${normalize(line)} `));
+  const edit = lengthEditFor(prompt, taskType, directions, opts.withLengthEdit !== false);
+  const added = [...directions, ...(edit && !haystack.includes(` ${normalize(edit)} `) ? [edit] : [])];
   for (const line of added) diff.push({ op: "add", text: line });
 
-  const rewritten = [...keptTexts, ...added].join(" ").trim();
+  // Every piece ends in punctuation, so joining them never runs two sentences together.
+  const pieces = [...keptTexts, ...added].map((p) => (/[.!?]$/.test(p) ? p : `${p}.`));
+  const rewritten = pieces.join(" ").trim();
   const tokenDelta = estimateTokens(rewritten).tokens - estimateTokens(prompt).tokens;
 
   return {
@@ -448,7 +487,18 @@ export function rewritePrompt(
 }
 
 function tidy(text: string): string {
-  let t = text.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim();
+  // Removing "please" from "DNS, please?" leaves a stray comma before the
+  // terminator. Drop commas and spaces that sit directly before a full stop.
+  let t = text
+    .trim()
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/,\s*([.?!])/g, "$1")
+    // Stripping "could you" turns a question into an instruction, and the
+    // question mark it left behind no longer matches the sentence.
+    .replace(/^((?:explain|describe|list|write|summari[sz]e|give|tell|compare|draft|suggest)\b[^?]*)\?$/i, "$1.")
+    .replace(/\s+$/, "")
+    .trim();
   if (t.length > 0) t = t[0]!.toUpperCase() + t.slice(1);
   return t;
 }
@@ -460,6 +510,7 @@ function tidy(text: string): string {
  */
 export const REWRITE_CAVEATS: string[] = [
   "Most of the energy saving is in the added output directions, not in the trimmed input. Trimming input mainly saves money and usage-limit headroom.",
+  "A short prompt can get slightly longer: a few input tokens buy a length limit that usually removes far more output tokens. The trade is only worth it when the answer would otherwise run long.",
   "Trimming can change meaning. Read the diff before you use it.",
   "Long pasted blocks are flagged, never removed. Only you know if the model needs them.",
 ];

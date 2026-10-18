@@ -77,9 +77,11 @@ npm run firebase:deploy</pre></div>
             <article class="surface empty-analysis" id="analysis-empty"><span class="empty-orbit"></span><h2>Your recommendations appear here</h2><p>Prompt-only mode suggests a rewrite and model. Add the response for efficiency and resource analysis.</p></article>
             <div id="analysis-content" hidden>
               <article class="result-score"><div><span>Output efficiency</span><strong id="result-efficiency">Prompt only</strong></div><p id="result-summary">Suggestions are ready before you spend any tokens.</p></article>
-              <article class="surface recommendation"><span class="step">01</span><div><h3>Measure</h3><p id="measure-result">Add the response to calculate its estimated footprint.</p></div></article>
-              <article class="surface recommendation"><span class="step">02</span><div><h3>Detect</h3><p id="detect-result">We found opportunities to tighten this prompt.</p></div></article>
-              <article class="surface recommendation recommendation-accent"><span class="step">03</span><div><h3>Apply</h3><pre id="rewrite-result"></pre><div class="recommendation-actions"><button id="copy-rewrite" class="button button-light" type="button">Copy improved prompt</button><span id="model-result"></span></div></div></article>
+              <article class="surface recommendation"><span class="step">01</span><div><h3>Measure</h3><p id="measure-result">Add the AI response to calculate its estimated footprint.</p></div></article>
+              <article class="surface recommendation"><span class="step">02</span><div><h3>Detect</h3><p id="detect-result">Add the AI response to find waste in what the model wrote back.</p></div></article>
+              <article class="surface recommendation"><span class="step">03</span><div><h3>What to change in your prompt</h3><div id="advice-result" class="advice-list"></div></div></article>
+              <article class="surface recommendation recommendation-accent"><span class="step">04</span><div><h3>Apply</h3><pre id="rewrite-result"></pre><p id="rewrite-delta" class="rewrite-delta"></p><div class="recommendation-actions"><button id="copy-rewrite" class="button button-light" type="button">Copy improved prompt</button></div></div></article>
+              <article class="surface recommendation"><span class="step">05</span><div><h3>Model for this prompt</h3><div id="model-result" class="model-list"></div></div></article>
             </div>
           </div>
         </div>
