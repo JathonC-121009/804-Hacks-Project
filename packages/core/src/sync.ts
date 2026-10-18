@@ -243,3 +243,25 @@ export async function fetchLeaderboard(
     rows.map(parseLeaderboardEntry).filter((entry): entry is LeaderboardEntry => entry !== null),
   );
 }
+
+/**
+ * Recompute and publish this account's leaderboard row from its full history.
+ *
+ * Every surface calls this after it writes an event, so the board is current
+ * whichever tool the person used last. It rebuilds from the whole history
+ * rather than incrementing a counter, because three surfaces incrementing one
+ * row without a transaction is how a board disagrees with its own dashboard.
+ */
+export async function refreshLeaderboardRow(client: FirestoreClient): Promise<LeaderboardEntry> {
+  const profile = await client.getDocument(paths.profile(client.uid));
+  const alias = typeof profile?.alias === "string" ? profile.alias : defaultAlias(client.uid);
+  const rows = await client.queryCollection(paths.profile(client.uid), {
+    collectionId: "events",
+    orderBy: [{ field: "timestamp", direction: "DESCENDING" }],
+    limit: 500,
+  });
+  const events = rows.filter((row) => typeof row.id === "string") as unknown as SyncUsageEvent[];
+  const entry = leaderboardEntry(client.uid, alias, events);
+  await putLeaderboardEntry(client, entry);
+  return entry;
+}

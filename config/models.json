@@ -1,33 +1,41 @@
 {
   "_meta": {
-    "purpose": "Model tiers for the model suggestion (plan section 5.5). Lineups change, so this is config, not code.",
-    "warning": "Model names below are examples of how to fill this in. Check each provider's current lineup before the demo, and check what their own model pickers do today (plan section 20) so nothing on screen is stale.",
-    "rule": "The product never switches models. These tiers only drive a suggestion the user accepts or ignores."
+    "purpose": "Concrete model and effort recommendations per AI tool, for each difficulty tier. Lineups change, so this is config, not code.",
+    "verified_rule": "verified: true means the model name was checked against that provider's own list. Everything else is marked and shown to the user as unchecked.",
+    "rule": "The product never switches models. These only drive a suggestion the user accepts or ignores."
   },
   "tiers": [
+    { "id": "small",  "label": "Small",  "energy_key": "e_out_small",  "description": "Classification, extraction, translation, reformatting, grammar fixes.", "examples": [], "verified": false },
+    { "id": "medium", "label": "Medium", "energy_key": "e_out_medium", "description": "Summaries, drafting, straightforward questions, light code.", "examples": [], "verified": false },
+    { "id": "large",  "label": "Large",  "energy_key": "e_out_large",  "description": "Hard reasoning, long multi-step work, architecture, debugging across many files, proofs.", "examples": [], "verified": false }
+  ],
+  "platforms": [
     {
-      "id": "small",
-      "label": "Small",
-      "energy_key": "e_out_small",
-      "description": "Short, well-defined work: classification, extraction, translation, reformatting, grammar fixes.",
-      "examples": ["(fill in a current small model)"],
-      "verified": false
+      "id": "claude",
+      "label": "Claude",
+      "tiers": {
+        "small":  { "model": "claude-haiku-5-5",  "effort": "low",    "verified": true,  "effort_verified": false, "note": "Fast tier for lookups, renames and simple rewrites." },
+        "medium": { "model": "claude-sonnet-5-5", "effort": "medium", "verified": true,  "effort_verified": false, "note": "Everyday work and light code." },
+        "large":  { "model": "claude-opus-5-5",   "effort": "high",   "verified": true,  "effort_verified": false, "note": "Hard reasoning and multi-file debugging. Effort levels reported for Opus 5: low, medium, high, xhigh, max. Some guides suggest xhigh for coding; check the official release page." }
+      }
     },
     {
-      "id": "medium",
-      "label": "Medium",
-      "energy_key": "e_out_medium",
-      "description": "Everyday work: summaries, drafting, straightforward questions, light code.",
-      "examples": ["(fill in a current mid-size model)"],
-      "verified": false
+      "id": "gemini",
+      "label": "Gemini",
+      "tiers": {
+        "small":  { "model": "gemini-3.1-flash-lite", "effort": "low",  "verified": false, "effort_verified": false, "note": "Stable per a May 2026 lineup guide. Thinking level set with thinking_level." },
+        "medium": { "model": "gemini-3-flash",        "effort": "low",  "verified": false, "effort_verified": false, "note": "Preview model per the same guide." },
+        "large":  { "model": "gemini-3.1-pro",        "effort": "high", "verified": false, "effort_verified": true,  "note": "Top Pro model per a Feb 2026 release note. thinking_level=high is the documented peak setting." }
+      }
     },
     {
-      "id": "large",
-      "label": "Large",
-      "energy_key": "e_out_large",
-      "description": "Hard reasoning, long multi-step work, architecture and debugging across many files, proofs.",
-      "examples": ["(fill in a current frontier model)"],
-      "verified": false
+      "id": "chatgpt",
+      "label": "ChatGPT",
+      "tiers": {
+        "small":  { "model": "check OpenAI's model list", "effort": "minimal", "verified": false, "effort_verified": false, "note": "No verified model name was found. Choose the smallest model your plan offers." },
+        "medium": { "model": "check OpenAI's model list", "effort": "low",     "verified": false, "effort_verified": false, "note": "Use the mid-size model your plan offers." },
+        "large":  { "model": "check OpenAI's model list", "effort": "high",    "verified": false, "effort_verified": false, "note": "Use the strongest reasoning model your plan offers." }
+      }
     }
   ],
   "default_assumed_tier": "large",

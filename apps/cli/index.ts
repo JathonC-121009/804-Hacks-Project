@@ -10,6 +10,7 @@ import {
   FirestoreClient,
   isFirebaseConfigured,
   pushUsageEvent,
+  refreshLeaderboardRow,
   refreshSession,
   rewritePrompt,
   runFullAnalysis,
@@ -243,6 +244,9 @@ function humanReport(result: FullAnalysis, color: boolean): string {
     `  2. Shorter prompt: ${result.rewrite.rewritten}`,
     `     ${dim(`${originalPromptTokens} → ${rewrittenPromptTokens} estimated input tokens (${result.rewrite.tokenDelta >= 0 ? "+" : ""}${result.rewrite.tokenDelta})`)}`,
     `  3. Model suggestion: ${result.suggestion.label} (${result.suggestion.confidence} confidence)`,
+    ...result.suggestion.recommendations.map(
+      (r) => `     ${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : dim(" (unchecked name)")}`,
+    ),
     "",
     dim(`Grid: ${result.grid.source}. Estimates are ranges, not measurements.`),
   );
@@ -271,6 +275,7 @@ function preflightReport(
     bold("PromptFootprint preflight"),
     `  Auto-fix applied: ${before} → ${after} estimated input tokens`,
     `  Suggested model: ${suggestion.label} (${suggestion.confidence} confidence)`,
+    ...suggestion.recommendations.map((r) => `    ${r.platform}: ${r.model} at ${r.effort} effort`),
     `  ${dim("Sending:")} ${fixed}`,
   ].join("\n");
 }
@@ -516,7 +521,8 @@ async function syncResult(result: FullAnalysis): Promise<void> {
     const client = await syncClient();
     if (!client) return;
     await pushUsageEvent(client, record);
-    console.error("PromptFootprint: synced to your account.");
+    await refreshLeaderboardRow(client);
+    console.error("PromptFootprint: synced to your account and leaderboard.");
   } catch (error) {
     console.error(`PromptFootprint: analysis completed, but account sync failed: ${error instanceof Error ? error.message : String(error)}`);
   }

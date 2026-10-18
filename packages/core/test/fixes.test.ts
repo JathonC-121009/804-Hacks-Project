@@ -199,7 +199,7 @@ test("D5: a mechanical task suggests a smaller model", () => {
   assert.equal(s.suggestedTier, "small");
   assert.equal(s.isDowngrade, true);
   assert.ok(s.footprintDeltaPer1kOutput.low > 0);
-  assert.match(s.label, /likely sufficient/i);
+  assert.match(s.label, /likely enough/i);
 });
 
 test("D5: hard work stays on the big model, with no saving claimed", () => {

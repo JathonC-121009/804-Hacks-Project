@@ -278,6 +278,40 @@ function renderDashboard(): void {
   renderTrend();
   renderSources();
   renderRecent();
+  renderWeek();
+}
+
+/**
+ * The weekly card: last seven days in numbers a person can act on.
+ *
+ * "Saved" is the wasted energy range, shown as a range and never a point, and
+ * only ever described as estimated. The top waste type is the most frequent
+ * detector in the week, so the card can say what to change, not just a score.
+ */
+function renderWeek(): void {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const week = events.filter((event) => Date.parse(event.timestamp) >= cutoff);
+  const host = el("weekly-card");
+  if (week.length === 0) {
+    host.innerHTML = `<h2>This week</h2><p class="empty-week">No replies measured in the last 7 days. Analyze one, or use the extension or CLI.</p>`;
+    return;
+  }
+  const total = week.reduce((sum, event) => sum + event.totalOutputTokens, 0);
+  const wasted = week.reduce((sum, event) => sum + event.wastedOutputTokens, 0);
+  const low = week.reduce((sum, event) => sum + event.resources.wasted.energyWh.low, 0);
+  const high = week.reduce((sum, event) => sum + event.resources.wasted.energyWh.high, 0);
+  const counts = new Map<string, number>();
+  for (const event of week) for (const type of event.flagTypes) counts.set(type, (counts.get(type) ?? 0) + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const names: Record<string, string> = { echo: "restating your question", filler: "filler and pleasantries", repetition: "repeated sentences", recap: "redundant recaps", boilerplate: "boilerplate", overlength: "over-long answers" };
+  const tip = top ? `Most common waste: ${names[top[0]] ?? top[0]}. Adding a standing instruction to skip it is the cheapest fix.` : "No recurring waste pattern this week.";
+  host.innerHTML = `<div class="section-head"><div><h2>This week</h2><p>${week.length} ${week.length === 1 ? "reply" : "replies"} measured &middot; estimated, not metered</p></div></div>
+    <div class="week-grid">
+      <div><span>Efficiency</span><strong>${total > 0 ? Math.round((1 - wasted / total) * 100) : 0}%</strong></div>
+      <div><span>Wasted output</span><strong>${wasted.toLocaleString()} tokens</strong></div>
+      <div><span>Energy you did not need</span><strong>${resource(low, "Wh")}&ndash;${resource(high, "Wh")}</strong></div>
+    </div>
+    <p class="week-tip">${esc(tip)}</p>`;
 }
 
 function renderTrend(): void {
@@ -340,7 +374,10 @@ async function analyze(): Promise<void> {
   el("analysis-empty").hidden = true;
   el("analysis-content").hidden = false;
   el("rewrite-result").textContent = rewrite.rewritten;
-  el("model-result").textContent = suggestion.label;
+  el("model-result").textContent = [
+    suggestion.label,
+    ...suggestion.recommendations.map((r) => `${r.platform}: ${r.model} at ${r.effort} effort${r.verified ? "" : " (name not yet checked)"}`),
+  ].join("\n");
   const before = estimateTokens(prompt).tokens;
   const after = estimateTokens(rewrite.rewritten).tokens;
   el("detect-result").textContent = rewrite.removed.length > 0 ? `${rewrite.removed.length} unnecessary section${rewrite.removed.length === 1 ? "" : "s"} detected. Revised prompt: ${before} → ${after} estimated tokens.` : `The request is already focused. We added an output-control instruction to reduce response waste.`;

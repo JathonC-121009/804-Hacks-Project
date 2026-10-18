@@ -26,6 +26,7 @@ import {
   estimateTokens,
   isFirebaseConfigured,
   pushUsageEvent,
+  refreshLeaderboardRow,
   rewritePrompt,
   suggestModel,
   syncUsageEvent,
@@ -266,10 +267,15 @@ function showNudge(composer: Element, data: NudgeData): void {
     );
   }
   if (data.suggestion.isDowngrade) {
+    // Name the model for the site the user is on, falling back to Claude's line.
+    const mine =
+      data.suggestion.recommendations.find((r) => r.platformId === site.id) ??
+      data.suggestion.recommendations.find((r) => r.platformId === "claude");
+    const named = mine ? `${mine.model} at ${mine.effort} effort` : `a ${data.suggestion.suggestedTier} model`;
     bits.push(
       `<span class="owo-pill" title="${escapeHtml(data.suggestion.caveats.join(" "))}">${escapeHtml(
-        data.suggestion.suggestedTier,
-      )} model likely enough &middot; ${data.suggestion.confidence} confidence</span>`,
+        named,
+      )} likely enough &middot; ${data.suggestion.confidence} confidence</span>`,
     );
   }
 
@@ -533,6 +539,8 @@ async function syncReceipt(
   });
   try {
     await pushUsageEvent(target, event);
+    // Keep the public board current from this surface too, not only the dashboard.
+    await refreshLeaderboardRow(target);
   } catch (error) {
     console.warn("[PromptFootprint] Account sync failed; local tracking still succeeded.", error);
   }

@@ -46,7 +46,24 @@ export interface ModelTier {
   verified: boolean;
 }
 
+export interface PlatformTier {
+  model: string;
+  effort: string;
+  /** True only when the model name was checked against that provider's own list. */
+  verified: boolean;
+  /** True only when the effort value was checked against that provider's docs. */
+  effort_verified: boolean;
+  note: string;
+}
+
+export interface PlatformModels {
+  id: string;
+  label: string;
+  tiers: Record<ModelClass, PlatformTier>;
+}
+
 export interface ModelsConfig {
+  platforms: PlatformModels[];
   _meta: Record<string, string>;
   tiers: ModelTier[];
   default_assumed_tier: ModelClass;
@@ -287,6 +304,16 @@ export interface Signal {
   detail?: string;
 }
 
+export interface PlatformRecommendation {
+  platform: string;
+  platformId: string;
+  model: string;
+  effort: string;
+  verified: boolean;
+  effortVerified: boolean;
+  note: string;
+}
+
 export interface ModelSuggestion {
   assumedCurrentTier: ModelClass;
   suggestedTier: ModelClass;
@@ -299,6 +326,8 @@ export interface ModelSuggestion {
   /** Only present when real output token counts are known. */
   footprintDeltaForThisResponse?: Range;
   label: string;
+  /** The concrete model and effort per platform, for the suggested tier. */
+  recommendations: PlatformRecommendation[];
   caveats: string[];
   /** Always false. The product never switches models. */
   applied: false;

@@ -74,6 +74,7 @@ export {
   pushUsageEvent,
   putLeaderboardEntry,
   rankLeaderboard,
+  refreshLeaderboardRow,
   syncUsageEvent,
   type LeaderboardEntry,
   type SyncEventInput,

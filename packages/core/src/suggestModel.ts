@@ -1,4 +1,4 @@
-import type { Config, ModelClass, ModelSuggestion, Range, Signal } from "./types.ts";
+import type { Config, ModelClass, ModelSuggestion, PlatformRecommendation, Range, Signal } from "./types.ts";
 import { countWords } from "./text.ts";
 import { energyDeltaPer1kOutput } from "./estimate.ts";
 
@@ -83,6 +83,22 @@ function confidenceFor(score: number): "low" | "medium" | "high" {
 
 const ORDER: ModelClass[] = ["small", "medium", "large"];
 
+/** The concrete model and effort each AI tool would use for this tier. */
+export function recommendationsFor(config: Config, tier: ModelClass): PlatformRecommendation[] {
+  return config.models.platforms.map((platform) => {
+    const pick = platform.tiers[tier];
+    return {
+      platform: platform.label,
+      platformId: platform.id,
+      model: pick.model,
+      effort: pick.effort,
+      verified: pick.verified,
+      effortVerified: pick.effort_verified,
+      note: pick.note,
+    };
+  });
+}
+
 export function suggestModel(
   prompt: string,
   config: Config,
@@ -116,9 +132,11 @@ export function suggestModel(
     caveats.unshift("Low confidence: this prompt sits close to the line between tiers.");
   }
 
-  const label = isDowngrade
-    ? `A ${suggestedTier} model is likely sufficient`
-    : `Stay on ${current}`;
+  const recommendations = recommendationsFor(config, suggestedTier);
+  const claude = recommendations.find((r) => r.platformId === "claude") ?? recommendations[0];
+  const label = isDowngrade && claude
+    ? `${claude.model} at ${claude.effort} effort is likely enough`
+    : `Stay on your current model`;
 
   return {
     assumedCurrentTier: current,
@@ -129,6 +147,7 @@ export function suggestModel(
     signals,
     footprintDeltaPer1kOutput: delta.range,
     label,
+    recommendations,
     caveats,
     applied: false,
   };

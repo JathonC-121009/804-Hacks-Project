@@ -5,3 +5,8 @@
 @media(max-width:720px){.account-strip{width:auto}.account-strip .avatar,.account-strip .account-copy{display:none}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 .source-chip.web{background:#17313a;color:#63dcd3}tr.is-me td{background:#102b2c}tr.is-me td:first-child strong{color:#d8ff66}
+.week-card{padding:24px;margin-bottom:22px}.week-card h2{font-size:18px;margin:0 0 5px}.week-card p{margin:0;color:#718997;font-size:12px}
+.week-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#213647;border:1px solid #213647;border-radius:10px;overflow:hidden;margin:18px 0 14px}
+.week-grid>div{background:#0d1b2a;padding:16px}.week-grid span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6e8795}.week-grid strong{font-size:22px;letter-spacing:-.03em}
+.week-tip{color:#9fd8cf!important;font-size:13px!important;line-height:1.5}
+#model-result{white-space:pre-line}

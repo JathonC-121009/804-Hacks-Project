@@ -242,6 +242,17 @@ export function testConfig(): Config {
     },
     models: {
       _meta: { purpose: "test fixture" },
+      platforms: [
+        {
+          id: "claude",
+          label: "Claude",
+          tiers: {
+            small: { model: "test-small", effort: "low", verified: true, effort_verified: false, note: "t" },
+            medium: { model: "test-medium", effort: "medium", verified: true, effort_verified: false, note: "t" },
+            large: { model: "test-large", effort: "high", verified: true, effort_verified: false, note: "t" },
+          },
+        },
+      ],
       tiers: [
         {
           id: "small",
