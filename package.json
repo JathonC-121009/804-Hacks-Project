@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "promptfootprint": "./apps/cli/index.ts"
+  },
   "description": "Shows what resources your AI use is wasting, and gives three fixes.",
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "node scripts/serve.ts",
+    "cli": "node apps/cli/index.ts",
     "test": "node --test packages/core/test/*.test.ts",
     "seed": "node scripts/seed_demo.ts",
     "grid": "node scripts/fetch_grid.ts",

@@ -173,9 +173,11 @@ async function refreshSiteControl() {
     return;
   }
   if (isBuiltInHost(tab.url.hostname)) {
-    $("enable-site").disabled = true;
-    $("enable-site").textContent = "Enabled automatically";
-    setSiteStatus("This AI tool has dedicated support.", "ok");
+    $("site-heading").textContent = "Current AI tool";
+    $("site-help").textContent = "Activate the analyzer immediately on this open chat page.";
+    $("enable-site").disabled = false;
+    $("enable-site").textContent = "Activate on this page";
+    setSiteStatus("Dedicated support is available. Use Activate after reloading the extension.", "ok");
     return;
   }
 
@@ -196,8 +198,10 @@ $("enable-site").addEventListener("click", async () => {
     const tab = await activeWebTab();
     if (!tab) throw new Error("Open an HTTPS AI chat page first.");
     if (isBuiltInHost(tab.url.hostname)) {
-      button.textContent = "Enabled automatically";
-      setSiteStatus("This AI tool has dedicated support.", "ok");
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["overlay.css"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["loader.js"] });
+      button.textContent = "Active on this page";
+      setSiteStatus("The analyzer is active. Existing drafts are checked immediately.", "ok");
       return;
     }
 

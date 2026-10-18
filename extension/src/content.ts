@@ -128,6 +128,12 @@ function watchComposer(): void {
     },
     true,
   );
+
+  // Chrome does not replay input events that happened before the extension was
+  // loaded. Evaluate an existing draft immediately so activation on an already
+  // open chat produces a nudge without making the user type another character.
+  const existing = pick(document, site.composer).el;
+  if (existing) evaluateDraft(existing);
 }
 
 function isComposer(el: Element): boolean {
@@ -344,9 +350,22 @@ function scanReplies(): void {
     if (seen.has(msg)) continue;
     const text = msg.innerText?.trim() ?? "";
     if (text.length < 40) continue;
+    if (isProviderError(text)) continue;
     seen.add(msg);
     attachReceipt(msg, text, promptBefore(msg, prompts));
   }
+}
+
+/** Provider error banners are not model output and must not consume the user's totals. */
+function isProviderError(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    "something went wrong",
+    "please try again later",
+    "there was an error generating",
+    "network error",
+    "response was blocked",
+  ].some((message) => normalized.includes(message));
 }
 
 /** Pair each answer with the nearest user message before it in document order. */

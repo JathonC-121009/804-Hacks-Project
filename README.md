@@ -27,6 +27,7 @@ Then open <http://127.0.0.1:5173/>.
 | Command | What it does |
 |---|---|
 | `npm run dev` | Serves the portal at :5173 |
+| `npm run cli -- --help` | Runs the provider-neutral terminal analyzer |
 | `npm test` | 103 tests, including the acceptance criteria from the plan |
 | `npm run seed` | Regenerates the demo data in `data/` (run it the morning of the event so dates look current) |
 | `npm run grid` | Fetches real PJM grid data — needs `EIA_API_KEY` |
@@ -56,6 +57,23 @@ Demo core (D1–D9 in the plan) — all working, all tested:
 | D9 | Weekly efficiency card |
 
 The browser extension is also built. It has dedicated support for ChatGPT, Claude, Gemini, Perplexity, Microsoft Copilot, Grok, Poe, DeepSeek, Mistral Le Chat, Meta AI, and You.com. For another browser-based AI tool, open its chat page and choose **Enable on this AI site** in the extension popup; access is requested only for that site.
+
+The CLI works with any terminal-based AI tool because it reads plain text from flags, files, or stdin. It can also use exact token counts when a provider exposes them:
+
+```bash
+# Pipe an AI response into the analyzer
+gemini -p "Explain DNS" | npm run cli -- analyze \
+  --prompt "Explain DNS" --tool gemini
+
+# Analyze saved prompt/response files
+npm run cli -- analyze --prompt-file prompt.txt --response-file response.txt
+
+# Pass exact provider usage and return clean machine-readable output
+node apps/cli/index.ts analyze -p "Summarize this" -r "Great question..." \
+  --input-tokens 25 --output-tokens 80 --model-class medium --json
+```
+
+Run `npm run cli -- --help` for all options. Text analysis stays local, and `--tool` is a free-form label so the CLI does not need a provider-specific integration.
 
 **Not built, by choice:** CLI log reader (Tier 2), leaderboard (Tier 3), and carbon-aware scheduler (roadmap). Automatic model rerouting is permanently out of scope — the user always decides.
 

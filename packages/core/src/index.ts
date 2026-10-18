@@ -82,6 +82,10 @@ export interface FullAnalysisInput {
   timestamp?: string;
   /** True only when a gate verdict exists for this prompt's task. */
   checkedAgainstExamples?: boolean;
+  /** Where this analysis came from. Defaults to the paste-in portal. */
+  surface?: "paste" | "web" | "cli";
+  /** Provider or terminal tool name. Free-form so new tools need no code change. */
+  tool?: string;
 }
 
 export interface FullAnalysis {
@@ -118,8 +122,8 @@ export function runFullAnalysis(input: FullAnalysisInput, config: Config): FullA
   const event: UsageEvent = {
     id: `evt_${timestamp}`,
     timestamp,
-    surface: "paste",
-    tool: "other",
+    surface: input.surface ?? "paste",
+    tool: input.tool ?? "other",
     model: input.modelClass,
     model_class: input.modelClass,
     tokens,
