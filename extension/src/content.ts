@@ -48,6 +48,54 @@ import {
 import { pick, pickAll, readComposer, siteFor, type SiteConfig } from "./sites.ts";
 
 const site: SiteConfig = siteFor(location.hostname);
+
+/**
+ * Is this content script still attached to a live extension?
+ *
+ * Reloading the extension (or updating it) orphans the copy already running in
+ * an open tab: the DOM listeners keep firing, but every chrome.* call throws
+ * "Extension context invalidated". Unhandled, that is an error on the page
+ * for every keystroke the user makes.
+ */
+function extensionAlive(): boolean {
+  try {
+    return Boolean(chrome.runtime?.id);
+  } catch {
+    return false;
+  }
+}
+
+let tornDown = false;
+
+/** Leave the page exactly as we found it, once we can no longer work. */
+function teardown(): void {
+  if (tornDown) return;
+  tornDown = true;
+  removeNudge();
+  observer?.disconnect();
+  document.querySelectorAll(".owo-receipt").forEach((el) => el.remove());
+  console.info("[Output-Waste Optimizer] extension reloaded; this tab's copy has stopped. Reload the page to resume.");
+}
+
+/** Run a chrome.* call, and shut down cleanly if the context has gone. */
+function safely<T>(fn: () => T): T | undefined {
+  if (tornDown) return undefined;
+  if (!extensionAlive()) {
+    teardown();
+    return undefined;
+  }
+  try {
+    return fn();
+  } catch (error) {
+    if (String(error).includes("Extension context invalidated")) {
+      teardown();
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+let observer: MutationObserver | null = null;
 let config: Config | null = null;
 
 /**
@@ -100,13 +148,13 @@ function readSession(value: unknown): AuthSession | null {
 
 function loadSettings(): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage?.local.get(["autoDirections", "pfSession", "wasteByType"], (s) => {
+    safely(() => chrome.storage?.local.get(["autoDirections", "pfSession", "wasteByType"], (s) => {
       autoDirections = s["autoDirections"] === true;
       session = readSession(s["pfSession"]);
       client = null;
       wasteProfile = (s["wasteByType"] as WasteProfile) ?? {};
       resolve();
-    });
+    })) ?? resolve();
   });
 }
 
@@ -120,7 +168,7 @@ function firestore(): FirestoreClient | null {
   client ??= new FirestoreClient(firebase, session, {
     onSession: (next) => {
       session = next;
-      chrome.storage?.local.set({ pfSession: next });
+      safely(() => chrome.storage?.local.set({ pfSession: next }));
     },
   });
   return client;
@@ -129,12 +177,13 @@ function firestore(): FirestoreClient | null {
 /** Turn auto-apply off and remember it, so the setting survives a reload. */
 function disableAutoDirections(): void {
   autoDirections = false;
-  chrome.storage?.local.set({ autoDirections: false });
+  safely(() => chrome.storage?.local.set({ autoDirections: false }));
 }
 
 // --- setup ------------------------------------------------------------------
 
 async function loadConfig(): Promise<Config> {
+  if (!extensionAlive()) throw new Error("Extension context is gone.");
   const [sources, models] = await Promise.all([
     fetch(chrome.runtime.getURL("config/sources.json")).then((r) => r.json()),
     fetch(chrome.runtime.getURL("config/models.json")).then((r) => r.json()),
@@ -145,6 +194,7 @@ async function loadConfig(): Promise<Config> {
 /** Absent or unfilled config is normal: sync is optional, analysis is not. */
 async function loadFirebaseConfig(): Promise<FirebaseWebConfig | null> {
   try {
+    if (!extensionAlive()) return null;
     const candidate = await fetch(chrome.runtime.getURL("config/firebase.json")).then((r) => r.json());
     return isFirebaseConfigured(candidate) ? (candidate as FirebaseWebConfig) : null;
   } catch {
@@ -156,13 +206,13 @@ async function boot(): Promise<void> {
   config = await loadConfig();
   firebase = await loadFirebaseConfig();
   await loadSettings();
-  chrome.storage?.onChanged?.addListener((changes) => {
+  safely(() => chrome.storage?.onChanged?.addListener((changes) => {
     if (changes["autoDirections"]) autoDirections = changes["autoDirections"].newValue === true;
     if (changes["pfSession"]) {
       session = readSession(changes["pfSession"].newValue);
       client = null;
     }
-  });
+  }));
   installProbe();
   watchComposer();
   watchReplies();
@@ -357,7 +407,24 @@ function node(
   return el;
 }
 
+/** What the bar currently says, so an unchanged bar is left alone. */
+let nudgeSignature = "";
+
 function showNudge(composer: Element, data: NudgeData): void {
+  // Without the typing pause this runs on every keystroke. Rebuilding the bar
+  // each time makes it flicker and jump under the cursor, so a bar that would
+  // say exactly the same thing is left where it is.
+  const signature = JSON.stringify([
+    data.canRewrite,
+    data.advice,
+    data.rewritten,
+    data.detectedModel,
+    data.suggestion.suggestedTier,
+    data.suggestion.isDowngrade,
+    pendingUndo !== null,
+  ]);
+  if (nudgeEl && signature === nudgeSignature) return;
+  nudgeSignature = signature;
   removeNudge();
   const box = document.createElement("div");
   box.className = "owo-nudge";
@@ -492,18 +559,25 @@ function position(box: HTMLElement, anchor: Element): void {
   box.style.top = `${Math.max(margin, r.top - 46)}px`;
   box.style.maxWidth = `${Math.min(Math.max(280, r.width), window.innerWidth - margin * 2)}px`;
 
-  // Measure after layout and pull it back on screen. A composer near the right
-  // edge, or one wider than the window, otherwise puts half the bar outside it.
+  // Place it only once its real size is known. Covering the box someone is
+  // typing into is worse than not showing the hint at all.
   requestAnimationFrame(() => {
-    const box_ = box.getBoundingClientRect();
-    if (box_.right > window.innerWidth - margin) {
-      box.style.left = `${Math.max(margin, window.innerWidth - box_.width - margin)}px`;
+    const self = box.getBoundingClientRect();
+    if (self.right > window.innerWidth - margin) {
+      box.style.left = `${Math.max(margin, window.innerWidth - self.width - margin)}px`;
     }
-    const top = Number.parseFloat(box.style.top);
-    if (box_.height > 46 && top === Math.max(margin, r.top - 46)) {
-      // A wrapped bar is taller than the gap reserved for it, so it would sit
-      // on top of the composer. Lift it by its real height.
-      box.style.top = `${Math.max(margin, r.top - box_.height - 8)}px`;
+    const gap = 8;
+    const roomAbove = r.top - margin;
+    const roomBelow = window.innerHeight - r.bottom - margin;
+    if (self.height + gap <= roomAbove) {
+      box.style.top = `${r.top - self.height - gap}px`;
+    } else if (self.height + gap <= roomBelow) {
+      // Gemini keeps its composer near the bottom with little room above it.
+      box.style.top = `${r.bottom + gap}px`;
+    } else {
+      // Nowhere clear: sit above the composer's top edge and let it scroll
+      // rather than overlap the text being typed.
+      box.style.top = `${Math.max(margin, r.top - self.height - gap)}px`;
     }
   });
 }
@@ -511,6 +585,7 @@ function position(box: HTMLElement, anchor: Element): void {
 function removeNudge(): void {
   nudgeEl?.remove();
   nudgeEl = null;
+  nudgeSignature = "";
 }
 
 /**
@@ -580,7 +655,7 @@ function watchReplies(): void {
   // body is the one node the app never replaces. The extra mutations it sees
   // cost nothing here, because the work is debounced and scanReplies only acts
   // on messages it has not already measured.
-  const observer = new MutationObserver(() => {
+  observer = new MutationObserver(() => {
     window.clearTimeout(replyDebounce);
     // Replies stream in token by token. Waiting for a quiet moment means we
     // measure the finished answer instead of a half-written one.
@@ -839,7 +914,7 @@ function addResources(
 
 /** Aggregate counts and resource ranges only. Prompt and response text never enter storage. */
 function bumpTotals(wasted: number, total: number, estimateForReply: Estimate): void {
-  chrome.storage?.local.get(
+  safely(() => chrome.storage?.local.get(
     ["wasted", "total", "replies", "resourcesTotal", "resourcesWasted"],
     (prev) => {
     chrome.storage.local.set({
@@ -855,7 +930,7 @@ function bumpTotals(wasted: number, total: number, estimateForReply: Estimate): 
       ),
     });
     },
-  );
+  ));
 }
 
 // --- helpers ----------------------------------------------------------------
