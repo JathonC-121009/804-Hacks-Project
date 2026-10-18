@@ -1,0 +1,252 @@
+import type { DiffOp, Removal, RewriteResult, TaskType } from "./types.ts";
+import { countWords, jaccard, normalize, splitSentences } from "./text.ts";
+import { estimateTokens } from "./tokens.ts";
+
+/**
+ * Per-prompt rewrite (plan section 5.4).
+ *
+ * Rule-based and local. An LLM rewrite would spend energy to save energy and
+ * would send the prompt off the device, breaking the local-only promise. Rules
+ * are also auditable: the user can see exactly why each word went.
+ *
+ * Where the saving actually comes from, stated plainly because the pitch has to
+ * say it too: under the output-centred model, trimming input saves very little
+ * energy. Most of the energy saving is in the appended output directions. Input
+ * trimming saves money and usage-limit headroom.
+ *
+ * Nothing here is applied automatically. The caller shows the diff and the user
+ * approves, because trimming can change meaning.
+ */
+
+// --- task type --------------------------------------------------------------
+
+const TASK_PATTERNS: { type: TaskType; patterns: RegExp[] }[] = [
+  { type: "classify", patterns: [/\bclassif/i, /\bcategori[sz]/i, /\blabel (?:this|these|the following)\b/i, /\bis this (?:a|an|spam|positive|negative)\b/i, /\bsentiment\b/i] },
+  { type: "extract", patterns: [/\bextract\b/i, /\bpull out\b/i, /\bfind all (?:the )?(?:names|dates|emails|numbers|entities)\b/i, /\blist the (?:names|dates|values|fields)\b/i] },
+  { type: "translate", patterns: [/\btranslate\b/i, /\binto (?:spanish|french|german|chinese|japanese|korean|portuguese|italian)\b/i] },
+  { type: "summarize", patterns: [/\bsummar[iy]/i, /\btl;?dr\b/i, /\bgive me the gist\b/i, /\bkey (?:points|takeaways)\b/i] },
+  { type: "rewrite", patterns: [/\brewrite\b/i, /\brephrase\b/i, /\breword\b/i, /\bproofread\b/i, /\bfix (?:the )?(?:grammar|spelling|typos)\b/i, /\bmake this (?:clearer|shorter|more)\b/i] },
+  { type: "code", patterns: [/```/, /\bfunction\b/i, /\brefactor\b/i, /\bdebug\b/i, /\bstack trace\b/i, /\bwrite (?:a |some )?(?:code|script|test|query)\b/i, /\bTypeError|SyntaxError|NullPointer/] },
+  { type: "reasoning", patterns: [/\bwhy (?:does|do|is|are|would)\b/i, /\bprove\b/i, /\bderive\b/i, /\bcompare .* (?:and|vs\.?|versus)\b/i, /\btrade-?offs?\b/i, /\bdesign (?:a|an|the)\b/i, /\barchitect/i, /\bstep by step\b/i] },
+];
+
+export function detectTaskType(prompt: string): TaskType {
+  for (const { type, patterns } of TASK_PATTERNS) {
+    if (patterns.some((re) => re.test(prompt))) return type;
+  }
+  return "general";
+}
+
+// --- output directions ------------------------------------------------------
+
+/**
+ * The directions appended per task type. These are where the energy saving is.
+ *
+ * Note `reasoning` deliberately gets no length cap. Capping length on hard
+ * reasoning is exactly where brevity costs accuracy, and claiming a saving
+ * there would be the kind of overclaim the plan's risk table warns about.
+ */
+const OUTPUT_DIRECTIONS: Record<TaskType, string[]> = {
+  classify: ["Reply with the label only, nothing else."],
+  extract: ["Reply with the extracted values only, one per line. No commentary."],
+  translate: ["Reply with the translation only."],
+  summarize: ["Reply with at most 5 bullet points. No preamble, no closing line."],
+  rewrite: ["Reply with the rewritten text only."],
+  code: ["Reply with the code and at most one line of explanation. No preamble."],
+  reasoning: ["Answer directly. No preamble and no recap at the end."],
+  general: ["Answer directly. No preamble, no closing offer, no recap."],
+};
+
+// --- politeness stripping ---------------------------------------------------
+
+/** Phrases removed inside a sentence that still carries the real instruction. */
+const PHRASE_STRIPS: { re: RegExp; why: string }[] = [
+  { re: /\bcould you (?:please |kindly )?/gi, why: "Politeness: the request is clear without it." },
+  { re: /\bwould you (?:please |kindly )?/gi, why: "Politeness: the request is clear without it." },
+  { re: /\bi was wondering if you could\s*/gi, why: "Politeness padding." },
+  { re: /\bi'?d (?:really )?appreciate it if you could\s*/gi, why: "Politeness padding." },
+  { re: /\bif you don'?t mind,?\s*/gi, why: "Politeness padding." },
+  { re: /\bplease\s+/gi, why: "Politeness: no effect on the answer." },
+  { re: /\s*\bplease\b/gi, why: "Politeness: no effect on the answer." },
+];
+
+/** Sentences that are nothing but pleasantry, so the whole sentence goes. */
+const PLEASANTRY_SENTENCES: RegExp[] = [
+  /^thank(?:s| you)(?: so much)?(?: in advance)?(?: for your help)?[!.\s]*$/i,
+  /^i hope (?:you'?re|you are) (?:well|doing well)[!.\s]*$/i,
+  /^hope (?:this finds you well|you'?re well)[!.\s]*$/i,
+  /^(?:hi|hello|hey)(?: there)?[!,.\s]*$/i,
+  /^i'?d (?:really )?appreciate (?:it|your help|any help)[!.\s]*$/i,
+  /^no rush[!.\s]*$/i,
+];
+
+const DUPLICATE_JACCARD = 0.8;
+/** Floor for FUZZY matching only: short list items legitimately share wording. */
+const DUPLICATE_MIN_WORDS = 6;
+/**
+ * Floor for EXACT matching. Much lower, because an identical sentence is a
+ * repeat at any length and needs no protection from coincidence. Keeping the
+ * fuzzy floor here would let "Translate the paragraph into French." repeated
+ * verbatim survive, which is the most obvious repeat there is.
+ */
+const DUPLICATE_EXACT_MIN_WORDS = 3;
+
+/**
+ * Known limitation, worth saying out loud on stage.
+ *
+ * Duplicate detection compares word sets, so it catches a repeat that reuses
+ * the wording ("Summarise the article" twice, with or without a "please"). It
+ * does NOT catch a paraphrased repeat: "Please summarise this article" and
+ * "I would like a summary of the article" share almost no words, so no
+ * threshold separates them from two genuinely different instructions.
+ *
+ * Catching that needs sentence meaning, which would mean a model call, which
+ * would mean spending energy and sending the prompt off the device. Both are
+ * things this product promises not to do, so the honest answer is that this
+ * case is out of scope rather than badly approximated.
+ */
+
+
+// --- pasted context ---------------------------------------------------------
+
+const PASTED_MIN_WORDS = 60;
+
+/**
+ * Long blocks that look pasted in. Flagged for the user to confirm, never
+ * removed: only they know whether the model needs that context, and silently
+ * dropping it is the fastest way to make the rewrite produce a worse answer.
+ */
+function findPastedContext(prompt: string): RewriteResult["flaggedContext"] {
+  const out: RewriteResult["flaggedContext"] = [];
+  const paragraphs: { text: string; start: number }[] = [];
+  let cursor = 0;
+  for (const part of prompt.split(/\n{2,}/)) {
+    paragraphs.push({ text: part, start: cursor });
+    cursor += part.length + 2;
+  }
+
+  for (const p of paragraphs) {
+    const w = countWords(p.text);
+    if (w < PASTED_MIN_WORDS) continue;
+
+    const quoted = /^\s*>/m.test(p.text);
+    const replyHeader = /\bOn .{3,40}\bwrote:/i.test(p.text);
+    const secondPerson = /\b(?:you|your|please|I want|I need|give me|write|make|explain)\b/i.test(p.text);
+
+    // Quoted or a reply header is strong evidence. Otherwise: a long block with
+    // no second-person address is probably material rather than instruction.
+    if (quoted || replyHeader || !secondPerson) {
+      out.push({
+        start: p.start,
+        end: p.start + p.text.length,
+        excerpt: p.text.replace(/\s+/g, " ").trim().slice(0, 200),
+        words: w,
+      });
+    }
+  }
+  return out;
+}
+
+// --- rewrite ----------------------------------------------------------------
+
+export function rewritePrompt(
+  prompt: string,
+  taskTypeOverride?: TaskType,
+  opts: { checkedAgainstExamples?: boolean } = {},
+): RewriteResult {
+  const taskType = taskTypeOverride ?? detectTaskType(prompt);
+  const sentences = splitSentences(prompt);
+  const removed: Removal[] = [];
+  const diff: DiffOp[] = [];
+  const keptNorms: string[] = [];
+  const keptTexts: string[] = [];
+
+  for (const s of sentences) {
+    // 1. Whole-sentence pleasantry.
+    if (PLEASANTRY_SENTENCES.some((re) => re.test(s.text.trim()))) {
+      removed.push({ text: s.text, why: "Pleasantry with no instruction in it." });
+      diff.push({ op: "remove", text: s.text });
+      continue;
+    }
+
+    // 2. Strip politeness phrases but keep the sentence.
+    //
+    // This runs before the duplicate check on purpose, so "Please do X" and
+    // "Do X" are compared on equal footing. Comparing the raw sentences would
+    // let a stray "please" hide a repeat.
+    let text = s.text;
+    const politenessRemovals: Removal[] = [];
+    for (const strip of PHRASE_STRIPS) {
+      if (strip.re.test(text)) {
+        const before = text;
+        text = text.replace(strip.re, " ");
+        if (before !== text) politenessRemovals.push({ text: before.trim(), why: strip.why });
+      }
+    }
+    text = tidy(text);
+
+    if (countWords(text) === 0) {
+      removed.push({ text: s.text, why: "Nothing left once the politeness was removed." });
+      diff.push({ op: "remove", text: s.text });
+      continue;
+    }
+
+    // 3. A repeat of an instruction already given.
+    const norm = normalize(text);
+    const wordCount = countWords(text);
+    const exactRepeat = wordCount >= DUPLICATE_EXACT_MIN_WORDS && keptNorms.includes(norm);
+    const fuzzyRepeat =
+      wordCount >= DUPLICATE_MIN_WORDS &&
+      keptNorms.some((k) => jaccard(k, norm) >= DUPLICATE_JACCARD);
+    if (exactRepeat || fuzzyRepeat) {
+      removed.push({ text: s.text, why: "Repeats an instruction you already gave." });
+      diff.push({ op: "remove", text: s.text });
+      continue;
+    }
+
+    removed.push(...politenessRemovals);
+    if (text !== s.text) {
+      diff.push({ op: "remove", text: s.text });
+      diff.push({ op: "add", text });
+    } else {
+      diff.push({ op: "keep", text });
+    }
+    keptNorms.push(normalize(text));
+    keptTexts.push(text);
+  }
+
+  const added = OUTPUT_DIRECTIONS[taskType];
+  for (const line of added) diff.push({ op: "add", text: line });
+
+  const rewritten = [...keptTexts, ...added].join(" ").trim();
+  const tokenDelta = estimateTokens(rewritten).tokens - estimateTokens(prompt).tokens;
+
+  return {
+    original: prompt,
+    rewritten,
+    taskType,
+    diff,
+    tokenDelta,
+    removed,
+    added: [...added],
+    flaggedContext: findPastedContext(prompt),
+    checkedAgainstExamples: opts.checkedAgainstExamples ?? false,
+  };
+}
+
+function tidy(text: string): string {
+  let t = text.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim();
+  if (t.length > 0) t = t[0]!.toUpperCase() + t.slice(1);
+  return t;
+}
+
+/**
+ * Shown with every rewrite. The first line is the one the pitch must not skip:
+ * if we imply that trimming the prompt is where the energy goes, a judge who
+ * knows how inference is billed will take the whole model apart.
+ */
+export const REWRITE_CAVEATS: string[] = [
+  "Most of the energy saving is in the added output directions, not in the trimmed input. Trimming input mainly saves money and usage-limit headroom.",
+  "Trimming can change meaning. Read the diff before you use it.",
+  "Long pasted blocks are flagged, never removed. Only you know if the model needs them.",
+];

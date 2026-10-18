@@ -1,0 +1,491 @@
+{
+  "_meta": {
+    "purpose": "Recurring tasks with hand-written examples, for the quality gate (plan section 7).",
+    "warning": "DEMO DATA. The `recorded` outputs were written for the demo, not captured from a real model. Any verdict produced from them is tagged runner_kind:\"recorded\" and the UI must say so.",
+    "how_to_make_this_real": "Replace `recorded` with captured outputs from real calls, or implement a live runner (plan item T2-e)."
+  },
+  "tasks": [
+    {
+      "id": "ticket-triage",
+      "name": "Support ticket triage",
+      "task_type": "classify",
+      "match_rule": {
+        "kind": "exact"
+      },
+      "baseline_prompt": "You are a support assistant. Please read the following support ticket carefully and classify it. Classify the ticket as billing, bug, or question. Explain your reasoning briefly. Thanks!",
+      "examples": [
+        {
+          "id": "t01",
+          "input": "My card was charged twice this month.",
+          "expected": "billing"
+        },
+        {
+          "id": "t02",
+          "input": "The export button does nothing on Safari.",
+          "expected": "bug"
+        },
+        {
+          "id": "t03",
+          "input": "Do you support SAML single sign-on?",
+          "expected": "question"
+        },
+        {
+          "id": "t04",
+          "input": "I was billed after cancelling my plan.",
+          "expected": "billing"
+        },
+        {
+          "id": "t05",
+          "input": "Dashboard shows a blank chart after the update.",
+          "expected": "bug"
+        },
+        {
+          "id": "t06",
+          "input": "How many seats come with the team plan?",
+          "expected": "question"
+        },
+        {
+          "id": "t07",
+          "input": "Refund still has not arrived after two weeks.",
+          "expected": "billing"
+        },
+        {
+          "id": "t08",
+          "input": "App crashes when I upload a 40MB file.",
+          "expected": "bug"
+        },
+        {
+          "id": "t09",
+          "input": "Can I change my invoice address?",
+          "expected": "question"
+        },
+        {
+          "id": "t10",
+          "input": "Charged in USD but my account is in EUR.",
+          "expected": "billing"
+        }
+      ]
+    },
+    {
+      "id": "ticket-summary",
+      "name": "Support ticket summary",
+      "task_type": "summarize",
+      "match_rule": {
+        "kind": "key_facts"
+      },
+      "baseline_prompt": "Please could you summarize the support ticket below for me. I would like a summary of the ticket below. Thanks in advance!",
+      "examples": [
+        {
+          "id": "s01",
+          "input": "Customer was double charged in March and is asking for a refund to the original card.",
+          "expected": "Double charged in March; wants a refund to the original card.",
+          "key_facts": [
+            "double charged",
+            "March",
+            "refund"
+          ]
+        },
+        {
+          "id": "s02",
+          "input": "Export fails on Safari 17 with a console error; works in Chrome.",
+          "expected": "Export broken on Safari 17, works in Chrome.",
+          "key_facts": [
+            "Safari",
+            "export",
+            "Chrome"
+          ]
+        },
+        {
+          "id": "s03",
+          "input": "Team of 12 wants SAML SSO before renewing in January.",
+          "expected": "Team of 12 needs SAML SSO before a January renewal.",
+          "key_facts": [
+            "SAML",
+            "12",
+            "January"
+          ]
+        },
+        {
+          "id": "s04",
+          "input": "Upload of a 40MB CSV crashes the app; smaller files are fine.",
+          "expected": "40MB CSV upload crashes the app; smaller files work.",
+          "key_facts": [
+            "40MB",
+            "crash",
+            "smaller files"
+          ]
+        },
+        {
+          "id": "s05",
+          "input": "Account billed in USD although the workspace region is EUR.",
+          "expected": "Billed in USD despite an EUR workspace.",
+          "key_facts": [
+            "USD",
+            "EUR"
+          ]
+        },
+        {
+          "id": "s06",
+          "input": "Refund approved on the 3rd but not received after fourteen days.",
+          "expected": "Refund approved on the 3rd, still not received after 14 days.",
+          "key_facts": [
+            "refund",
+            "14 days"
+          ]
+        },
+        {
+          "id": "s07",
+          "input": "Charts render blank after the 4.2 release for users on Firefox.",
+          "expected": "Blank charts on Firefox since release 4.2.",
+          "key_facts": [
+            "blank",
+            "Firefox",
+            "4.2"
+          ]
+        },
+        {
+          "id": "s08",
+          "input": "Customer cancelled in June but was charged again in July.",
+          "expected": "Cancelled in June, charged again in July.",
+          "key_facts": [
+            "cancelled",
+            "June",
+            "July"
+          ]
+        },
+        {
+          "id": "s09",
+          "input": "Asking whether invoice addresses can be edited after issue.",
+          "expected": "Wants to know if an issued invoice address can be edited.",
+          "key_facts": [
+            "invoice address",
+            "edit"
+          ]
+        },
+        {
+          "id": "s10",
+          "input": "Seat count question: how many seats are included on the team plan.",
+          "expected": "Asking how many seats the team plan includes.",
+          "key_facts": [
+            "seats",
+            "team plan"
+          ]
+        }
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "type": "prompt_rewrite",
+      "value": "shortened",
+      "description": "Trimmed politeness and added output directions."
+    },
+    {
+      "type": "model_tier",
+      "value": "small",
+      "description": "Run this task on a small model instead."
+    }
+  ],
+  "recorded": {
+    "prompt_rewrite:shortened:t01": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t01": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t02": {
+      "output": "bug",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t02": {
+      "output": "bug",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t03": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t03": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t04": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t04": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t05": {
+      "output": "bug",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t05": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t06": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t06": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t07": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t07": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t08": {
+      "output": "bug",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t08": {
+      "output": "bug",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t09": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t09": {
+      "output": "question",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:t10": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "model_tier:small:t10": {
+      "output": "billing",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 3,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s01": {
+      "output": "Double charged in March; wants a refund to the original card.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s02": {
+      "output": "Export broken on Safari 17, works in Chrome.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s03": {
+      "output": "Team of 12 needs SAML SSO before a January renewal.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s04": {
+      "output": "40MB CSV upload crashes the app; smaller files work.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s05": {
+      "output": "Billed in USD despite an EUR workspace.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s06": {
+      "output": "Refund approved on the 3rd, still not received after 14 days.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s07": {
+      "output": "Blank charts on Firefox since release 4.2.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s08": {
+      "output": "Cancelled in June, charged again in July.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s09": {
+      "output": "Wants to know if an issued invoice address can be edited.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    },
+    "prompt_rewrite:shortened:s10": {
+      "output": "Asking how many seats the team plan includes.",
+      "tokens": {
+        "input": 60,
+        "cache_write": 0,
+        "cache_read": 0,
+        "output": 18,
+        "reasoning": 0
+      }
+    }
+  }
+}

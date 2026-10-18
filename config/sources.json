@@ -1,0 +1,117 @@
+{
+  "_meta": {
+    "purpose": "Every number the product puts on screen lives here with a source. Plan rule 2: never invent a number.",
+    "how_to_use": "Replace each entry where verified=false with a real cited figure, fill source and date, then set verified=true. The UI shows an amber 'unsourced' badge for any figure derived from an unverified entry, and a banner while any remain.",
+    "warning_to_the_team": "The placeholder values below are order-of-magnitude scaffolding so the pipeline runs end to end. They are NOT research findings and must not be shown to judges or quoted in the pitch until verified. See plan section 17 and the checklist in section 20.",
+    "plan_reference": "docs/output-waste-optimizer-plan.md"
+  },
+
+  "e_out_small": {
+    "low": 0.0001,
+    "high": 0.001,
+    "unit": "Wh/token",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "Energy per output token for a small model class. Plan section 6.2 says to build this on the EcoLogits methodology (GPU energy from active parameters x generated tokens, plus a data centre overhead factor). Closed-model parameter counts are estimates, so this must stay a wide range."
+  },
+  "e_out_medium": {
+    "low": 0.0005,
+    "high": 0.005,
+    "unit": "Wh/token",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "Energy per output token for a medium model class. See e_out_small."
+  },
+  "e_out_large": {
+    "low": 0.002,
+    "high": 0.02,
+    "unit": "Wh/token",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "Energy per output token for a large model class. See e_out_small."
+  },
+
+  "e_in": {
+    "low": 0,
+    "high": 0,
+    "unit": "Wh/token",
+    "source": "Design decision, plan section 6.2: output-centred model, input weight defaults to 0",
+    "date": "2026-10-18",
+    "verified": true,
+    "note": "Deliberately zero. This is a modelling choice, not an empirical claim. Add a labelled sensitivity scenario with a small non-zero weight once a source exists, and say on screen that input energy is excluded."
+  },
+  "e_cache_read": {
+    "low": 0,
+    "high": 0,
+    "unit": "Wh/token",
+    "source": "Design decision, plan section 6.2: cache reads weighted near zero",
+    "date": "2026-10-18",
+    "verified": true,
+    "note": "Cache reads are most of the tokens in coding-agent sessions but use little energy. Modelling choice, not an empirical claim."
+  },
+  "e_cache_write": {
+    "low": 0,
+    "high": 0,
+    "unit": "Wh/token",
+    "source": "Design decision, plan section 6.2: optional small term, default 0",
+    "date": "2026-10-18",
+    "verified": true,
+    "note": "Modelling choice, not an empirical claim."
+  },
+
+  "WI": {
+    "low": 100,
+    "high": 2000,
+    "unit": "mL/kWh",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "Water per kWh, meant to cover on-site cooling plus off-site power generation. State which of the two the chosen source covers, because they differ by an order of magnitude and mixing them is the easiest way to overclaim."
+  },
+
+  "grid_fallback": {
+    "low": 300,
+    "high": 500,
+    "unit": "gCO2/kWh",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "Used only when the cached EIA feed is unavailable. Always labelled 'fallback value, not live' on screen."
+  },
+
+  "EF": {
+    "_note": "Emissions factor per fuel, used to turn the PJM fuel mix into a carbon intensity (plan section 9.2). Pick ONE published source for all of these and say whether it is lifecycle or direct combustion. Mixing sources or mixing lifecycle with direct is an overclaim.",
+    "_basis": "UNDECIDED - state lifecycle or direct before the pitch",
+    "COL": { "low": 820, "high": 1050, "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Coal" },
+    "NG":  { "low": 400, "high": 550,  "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Natural gas" },
+    "OIL": { "low": 650, "high": 850,  "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Petroleum" },
+    "NUC": { "low": 5,   "high": 20,   "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Nuclear" },
+    "WND": { "low": 8,   "high": 20,   "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Wind" },
+    "SUN": { "low": 30,  "high": 60,   "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Solar" },
+    "WAT": { "low": 10,  "high": 30,   "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Hydro" },
+    "OTH": { "low": 200, "high": 700,  "unit": "gCO2/kWh", "source": "PLACEHOLDER - NOT SOURCED", "verified": false, "note": "Other / unknown. Wide on purpose." }
+  },
+
+  "va_dc": {
+    "low": null,
+    "high": null,
+    "unit": "unset",
+    "source": "PLACEHOLDER - NOT SOURCED",
+    "date": null,
+    "verified": false,
+    "note": "One current, sourced figure for Virginia data centre electricity or water use, for Speaker A's opening. Plan section 8 says do not quote this from memory. Left null on purpose so nobody ships a remembered number."
+  },
+
+  "ACL2025": {
+    "low": null,
+    "high": null,
+    "unit": "unset",
+    "source": "PLACEHOLDER - look up Poddar et al., 'Brevity is the soul of sustainability', ACL Findings 2025, and quote its own numbers",
+    "date": null,
+    "verified": false,
+    "note": "Evidence that prompting for shorter responses saves energy. Read the paper and use its figures. Do not reuse any secondary summary's percentage."
+  }
+}

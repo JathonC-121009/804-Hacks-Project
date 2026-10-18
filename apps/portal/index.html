@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Output-Waste Optimizer</title>
+<link rel="stylesheet" href="/apps/portal/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Output&#8209;Waste Optimizer</h1>
+      <p class="tagline">Every token has a footprint. We show you the ones that don't earn it &mdash; and help you stop paying for them.</p>
+    </div>
+    <div id="banners" class="banners" aria-live="polite"></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ===================== input ===================== -->
+  <section class="panel" id="input-panel">
+    <div class="panel-head">
+      <h2>Paste an exchange</h2>
+      <p class="sub">Everything runs on this machine. Nothing you paste is uploaded or stored.</p>
+    </div>
+
+    <div class="examples">
+      <span class="examples-label">Try one:</span>
+      <button type="button" class="chip" data-example="wasteful">Wasteful answer</button>
+      <button type="button" class="chip" data-example="clean">Clean answer</button>
+      <button type="button" class="chip" data-example="promptHeavy">Bloated prompt</button>
+      <button type="button" class="chip chip-ghost" id="clear-btn">Clear</button>
+    </div>
+
+    <div class="io-grid">
+      <label class="field">
+        <span class="field-label">Your prompt</span>
+        <textarea id="prompt" rows="7" placeholder="What you asked the AI&hellip;" spellcheck="false"></textarea>
+      </label>
+      <label class="field">
+        <span class="field-label">The AI's response</span>
+        <textarea id="response" rows="7" placeholder="What it replied&hellip;" spellcheck="false"></textarea>
+      </label>
+    </div>
+
+    <details class="settings">
+      <summary>Settings &mdash; model tier, token counts, your price</summary>
+      <div class="settings-grid">
+        <label class="field">
+          <span class="field-label">Model tier you used</span>
+          <select id="model-class">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large" selected>Large</option>
+          </select>
+          <span class="hint" id="tier-hint"></span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Token counts</span>
+          <select id="token-mode">
+            <option value="estimated" selected>Estimate from the text</option>
+            <option value="exact">I'll enter real counts</option>
+          </select>
+          <span class="hint">Real counts come from an API usage field or a CLI log. Estimating is approximate.</span>
+        </label>
+
+        <label class="field" id="exact-input-field" hidden>
+          <span class="field-label">Input tokens</span>
+          <input id="exact-input" type="number" min="0" step="1" value="0">
+        </label>
+        <label class="field" id="exact-output-field" hidden>
+          <span class="field-label">Output tokens (including reasoning)</span>
+          <input id="exact-output" type="number" min="0" step="1" value="0">
+        </label>
+
+        <label class="field">
+          <span class="field-label">Your price per output token (USD)</span>
+          <input id="price" type="number" min="0" step="0.0000001" value="0" placeholder="0">
+          <span class="hint">Leave at 0 if you're on a flat plan. Cost then shows as zero.</span>
+        </label>
+      </div>
+    </details>
+
+    <button type="button" id="analyze-btn" class="primary">Analyze</button>
+  </section>
+
+  <!-- ===================== results ===================== -->
+  <section id="results" hidden>
+
+    <!-- score + resources -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>What this exchange wasted</h2>
+        <p class="sub" id="token-source-note"></p>
+      </div>
+
+      <div class="score-row">
+        <div class="score">
+          <div class="score-value" id="efficiency">&mdash;</div>
+          <div class="score-label">output efficiency</div>
+          <div class="score-note" id="efficiency-note"></div>
+        </div>
+        <div class="resources" id="resources"></div>
+      </div>
+
+      <div class="assumptions" id="assumptions"></div>
+    </div>
+
+    <!-- flags -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Where it went</h2>
+        <p class="sub">Scored waste is highlighted. Advisory findings are listed but never counted.</p>
+      </div>
+      <div class="flag-layout">
+        <div class="highlighted" id="highlighted"></div>
+        <ul class="flag-list" id="flag-list"></ul>
+      </div>
+      <div id="prompt-flags"></div>
+    </div>
+
+    <!-- the three fixes -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Three fixes</h2>
+        <p class="sub">Nothing here is applied automatically. You approve each one.</p>
+      </div>
+
+      <div class="fix" id="fix-instructions">
+        <div class="fix-head">
+          <h3><span class="fix-num">1</span> Standing instruction block</h3>
+          <p class="fix-sub">Paste once into your AI's custom-instructions setting. Applies to every future chat.</p>
+        </div>
+        <div class="fix-body">
+          <pre class="block" id="instruction-block"></pre>
+          <div class="fix-actions">
+            <button type="button" class="secondary" id="copy-block">Copy block</button>
+            <span class="meta" id="block-meta"></span>
+          </div>
+          <ul class="caveats" id="instruction-caveats"></ul>
+        </div>
+      </div>
+
+      <div class="fix" id="fix-rewrite">
+        <div class="fix-head">
+          <h3><span class="fix-num">2</span> Shorter prompt</h3>
+          <p class="fix-sub">Rule-based and local. Read the diff before you use it: trimming can change meaning.</p>
+        </div>
+        <div class="fix-body">
+          <div class="diff" id="rewrite-diff"></div>
+          <div class="rewrite-out">
+            <span class="field-label">Rewritten prompt</span>
+            <pre class="block" id="rewritten"></pre>
+          </div>
+          <div class="fix-actions">
+            <button type="button" class="secondary" id="approve-rewrite">Approve &amp; copy</button>
+            <span class="meta" id="rewrite-meta"></span>
+          </div>
+          <div id="flagged-context"></div>
+          <ul class="caveats" id="rewrite-caveats"></ul>
+        </div>
+      </div>
+
+      <div class="fix" id="fix-model">
+        <div class="fix-head">
+          <h3><span class="fix-num">3</span> Model suggestion</h3>
+          <p class="fix-sub">A suggestion only. This tool never switches your model.</p>
+        </div>
+        <div class="fix-body">
+          <div class="suggestion" id="suggestion"></div>
+          <details class="signals">
+            <summary>Why &mdash; every signal that fired</summary>
+            <ul id="signal-list"></ul>
+          </details>
+          <ul class="caveats" id="model-caveats"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== quality gate ===================== -->
+  <section class="panel" id="gate-panel">
+    <div class="panel-head">
+      <h2>Quality gate</h2>
+      <p class="sub">
+        Before a change is called safe, it runs against saved examples with known answers.
+        Once per task, not per request &mdash; checking every request would burn more energy than the change saves.
+      </p>
+    </div>
+    <div class="gate-controls">
+      <label class="field">
+        <span class="field-label">Task</span>
+        <select id="gate-task"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">Proposed change</span>
+        <select id="gate-change"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">Pass threshold</span>
+        <input id="gate-threshold" type="number" min="0" max="1" step="0.01" value="0.95">
+      </label>
+      <button type="button" class="primary" id="run-gate">Run check</button>
+    </div>
+    <div id="gate-result"></div>
+  </section>
+
+  <!-- ===================== weekly card ===================== -->
+  <section class="panel" id="card-panel">
+    <div class="panel-head">
+      <h2>Weekly card</h2>
+      <p class="sub">The shareable summary. Only scores leave the device &mdash; never your text.</p>
+    </div>
+    <div id="weekly-card"></div>
+  </section>
+
+  <!-- ===================== grid ===================== -->
+  <section class="panel" id="grid-panel">
+    <div class="panel-head">
+      <h2>The grid behind the numbers</h2>
+      <p class="sub">Carbon intensity for PJM, the grid that serves Northern Virginia.</p>
+    </div>
+    <div id="grid-info"></div>
+  </section>
+
+  <!-- ===================== limits ===================== -->
+  <section class="panel limits">
+    <div class="panel-head">
+      <h2>What this does not do</h2>
+      <p class="sub">Written down so we say it on stage before a judge asks.</p>
+    </div>
+    <ul>
+      <li><strong>These are estimates, not measurements.</strong> You cannot measure the energy of a hosted model's response from outside it. Every figure is a range from a published factor, and the range is the honest part.</li>
+      <li><strong>Average grid intensity, not marginal.</strong> Marginal is the theoretically right signal for load shifting. Average is what free hourly data supports. That gap is a known limitation and the next step.</li>
+      <li><strong>Input energy is counted as zero.</strong> A deliberate output-centred assumption, because generation dominates inference energy. It means prompt trimming shows as a money saving, not an energy one.</li>
+      <li><strong>Hidden reasoning tokens are invisible in web chat</strong>, so output there is undercounted.</li>
+      <li><strong>Brevity can cost quality.</strong> That is what the gate is for, and it only covers tasks with a checkable answer.</li>
+      <li><strong>A paraphrased repeat is not detected.</strong> Catching "summarise this" and "I'd like a summary of this" needs sentence meaning, which would mean a model call: energy spent to save energy, and your text leaving the device. Out of scope on purpose.</li>
+      <li><strong>We never detect hallucinations.</strong> Nothing here claims to.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <p>
+    804 Hacks &mdash; Track 2, Build a Sustainable Future.
+    Prototype. See <code>docs/output-waste-optimizer-plan.md</code> for scope, sources and open decisions.
+  </p>
+</footer>
+
+<script type="module" src="/apps/portal/app.ts"></script>
+</body>
+</html>
