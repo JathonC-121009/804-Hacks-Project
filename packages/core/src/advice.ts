@@ -192,6 +192,42 @@ function missingError(prompt: string): PromptAdvice | null {
   };
 }
 
+/**
+ * What a length limit would have saved on a reply that already arrived.
+ *
+ * This is NOT scored as waste. Nobody asked for a shorter answer, so calling
+ * the extra words waste would be inventing a requirement. It is reported
+ * instead, because "you did not set a limit" is useless on its own and "a
+ * 3-sentence limit would have saved about 60 words" is something to act on.
+ *
+ * Returns null when the prompt already sets a length (then it IS scored), or
+ * when the request kind has no sensible default.
+ */
+const BASELINE_WORDS: Partial<Record<RequestKind, { words: number; ask: string }>> = {
+  explain: { words: 60, ask: "in 3 sentences" },
+  write: { words: 150, ask: "under 150 words" },
+  list: { words: 75, ask: "5 bullets" },
+  summarize: { words: 45, ask: "in 3 bullets" },
+};
+
+export interface LengthOpportunity {
+  replyWords: number;
+  targetWords: number;
+  excessWords: number;
+  ask: string;
+}
+
+export function lengthOpportunity(prompt: string, response: string): LengthOpportunity | null {
+  if (hasLengthLimit(prompt)) return null;
+  const baseline = BASELINE_WORDS[requestKind(prompt)];
+  if (!baseline) return null;
+  const replyWords = countWords(response);
+  const excess = replyWords - baseline.words;
+  // A reply already inside the baseline had nothing to gain from a limit.
+  if (excess < 20) return null;
+  return { replyWords, targetWords: baseline.words, excessWords: excess, ask: baseline.ask };
+}
+
 /** Every piece of advice that applies to this prompt, most useful first. */
 export function adviseOnPrompt(prompt: string): PromptAdvice[] {
   if (prompt.trim().length === 0) return [];

@@ -36,6 +36,7 @@ import {
   refreshLeaderboardRow,
   adviseOnPrompt,
   classifyModelName,
+  lengthOpportunity,
   rewritePrompt,
   stableHash,
   suggestModel,
@@ -681,9 +682,24 @@ function attachReceipt(
   const scored = result.flags.filter((f) => f.confidence === "high");
   const pct = Math.round(result.efficiency * 100);
   const bar = document.createElement("div");
-  bar.className = `owo-receipt ${pct >= 90 ? "owo-good" : pct >= 70 ? "owo-mid" : "owo-bad"}`;
-  bar.appendChild(node("span", "owo-score", `${pct}%`));
-  bar.appendChild(node("span", "owo-score-label", "efficient"));
+  bar.className = `owo-receipt ${
+    scored.length === 0 && result.coverage.lengthTargetWords === null
+      ? "owo-mid"
+      : pct >= 90
+        ? "owo-good"
+        : pct >= 70
+          ? "owo-mid"
+          : "owo-bad"
+  }`;
+  // A bare "100% efficient" on a reply where nothing could be measured reads
+  // as "this answer was perfect". Say what was actually checked instead.
+  const opportunity = lengthOpportunity(prompt, response);
+  const measuredNothing = scored.length === 0 && result.coverage.lengthTargetWords === null;
+
+  bar.appendChild(node("span", "owo-score", measuredNothing ? "\u2014" : `${pct}%`));
+  bar.appendChild(
+    node("span", "owo-score-label", measuredNothing ? "no waste patterns found" : "efficient"),
+  );
   bar.appendChild(node("span", "owo-sep"));
   bar.appendChild(node("span", "owo-stat", `${result.wastedOutputTokens} wasted tokens`));
   bar.appendChild(
@@ -692,6 +708,22 @@ function attachReceipt(
   if (scored.length > 0) {
     bar.appendChild(
       node("button", "owo-link", `${scored.length} findings`, { "data-owo-detail": "1" }),
+    );
+  }
+  if (opportunity) {
+    bar.appendChild(
+      node(
+        "span",
+        "owo-stat",
+        `${opportunity.replyWords} words \u00b7 asking "${opportunity.ask}" would have cut about ${opportunity.excessWords}`,
+        { title: "Not counted as waste: you did not ask for a shorter answer. It is what a limit would have saved." },
+      ),
+    );
+  } else if (measuredNothing) {
+    bar.appendChild(
+      node("span", "owo-stat", "length not checked", {
+        title: result.coverage.note,
+      }),
     );
   }
   bar.appendChild(node("span", "owo-note", "estimated locally"));

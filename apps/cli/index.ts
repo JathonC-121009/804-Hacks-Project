@@ -17,6 +17,7 @@ import {
   signInWithPassword,
   suggestModel,
   estimateTokens,
+  lengthOpportunity,
   syncUsageEvent,
   type AuthSession,
   type Config,
@@ -213,7 +214,7 @@ function formatRange(range: Range): string {
   return `${range.low.toFixed(digits)}–${range.high.toFixed(digits)} ${range.unit}`;
 }
 
-function humanReport(result: FullAnalysis, color: boolean): string {
+function humanReport(result: FullAnalysis, color: boolean, response = ""): string {
   const bold = (s: string) => (color ? `\u001b[1m${s}\u001b[0m` : s);
   const dim = (s: string) => (color ? `\u001b[2m${s}\u001b[0m` : s);
   const { analysis, estimate } = result;
@@ -233,6 +234,7 @@ function humanReport(result: FullAnalysis, color: boolean): string {
 
   const flags = [...analysis.flags, ...analysis.promptFlags];
   const adviceLines = result.promptAdvice.map((a) => `  • ${a.why} ${a.suggestion}`);
+  const opportunity = lengthOpportunity(result.rewrite.original, response);
   if (flags.length === 0) lines.push("  No high-confidence waste detected.");
   for (const flag of flags) {
     lines.push(`  • ${flag.type}: ${flag.why}${flag.excerpt ? ` ${dim(`“${flag.excerpt}”`)}` : ""}`);
@@ -251,6 +253,13 @@ function humanReport(result: FullAnalysis, color: boolean): string {
     ),
     "",
     dim(analysis.coverage.note),
+    ...(opportunity
+      ? [
+          dim(
+            `This reply ran to ${opportunity.replyWords} words. Asking "${opportunity.ask}" would have cut about ${opportunity.excessWords} words. Not counted as waste: you did not ask for shorter.`,
+          ),
+        ]
+      : []),
     dim(`Grid: ${result.grid.source}. Estimates are ranges, not measurements.`),
   );
 
@@ -355,7 +364,7 @@ async function runCommand(parsed: ParsedArgs): Promise<number> {
     },
     config,
   );
-  console.error(`\n${humanReport(result, color)}`);
+  console.error(`\n${humanReport(result, color, run.output)}`);
   await syncResult(result);
   return 0;
 }
@@ -386,7 +395,7 @@ async function analyzeCommand(parsed: ParsedArgs): Promise<void> {
   );
 
   if (parsed.options.json) console.log(JSON.stringify(result, null, 2));
-  else console.log(humanReport(result, useColor(parsed.options, process.stdout)));
+  else console.log(humanReport(result, useColor(parsed.options, process.stdout), response));
   await syncResult(result);
 }
 

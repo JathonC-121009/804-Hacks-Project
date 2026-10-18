@@ -139,3 +139,36 @@ test("a because-clause that adds a real requirement is never dropped", async () 
     assert.match(rewritePrompt(prompt).rewritten, keep, prompt);
   }
 });
+
+test("a polished reply to an unbounded prompt reports what a limit would have saved", async () => {
+  const { lengthOpportunity } = await import("../src/advice.ts");
+  const reply =
+    "Closed-loop cooling circulates the same coolant through a sealed circuit. Heat from the " +
+    "data hall is rejected through a dry cooler, and the fluid returns. Because the loop is " +
+    "sealed, almost no water evaporates, so consumption is a fraction of an open evaporative " +
+    "system. The trade-off is electricity: the chillers work harder, which raises energy use " +
+    "and the carbon footprint, particularly in hot climates. Many operators run hybrid systems " +
+    "that switch between modes depending on the outside temperature, which keeps water use low " +
+    "in summer while avoiding the energy penalty for the rest of the year.";
+  const found = lengthOpportunity("explain closed loop cooling", reply);
+  assert.ok(found, "an unbounded explain request should report the opportunity");
+  assert.equal(found.ask, "in 3 sentences");
+  assert.ok(found.excessWords > 0);
+  // Once a limit is stated it becomes scored waste instead, so no opportunity.
+  assert.equal(lengthOpportunity("explain closed loop cooling in 3 sentences", reply), null);
+  // A reply already within the baseline had nothing to gain.
+  assert.equal(lengthOpportunity("explain DNS", "DNS maps names to addresses."), null);
+});
+
+test("100% is only reported when something was actually measured", () => {
+  const polished =
+    "Closed-loop cooling circulates coolant through a sealed circuit, so almost no water " +
+    "evaporates and consumption stays low compared with an open evaporative system.";
+  const nothingMeasured = analyze(polished, "explain closed loop cooling");
+  assert.equal(nothingMeasured.efficiency, 1);
+  assert.equal(nothingMeasured.coverage.lengthTargetWords, null, "nothing to measure length against");
+  assert.match(nothingMeasured.coverage.note, /not scored/);
+
+  const measured = analyze(polished, "explain closed loop cooling in 1 sentence");
+  assert.ok(measured.coverage.lengthTargetWords !== null, "a stated length is measurable");
+});

@@ -58,7 +58,13 @@ export {
   parseGridData,
   type IntensityLookup,
 } from "./grid.ts";
-export { adviseOnPrompt, type AdviceKind, type PromptAdvice } from "./advice.ts";
+export {
+  adviseOnPrompt,
+  lengthOpportunity,
+  type AdviceKind,
+  type LengthOpportunity,
+  type PromptAdvice,
+} from "./advice.ts";
 export { DEFAULT_BASELINE, describeBaseline, efficiencyOf, weeklyCard, wastedTokensOf } from "./card.ts";
 export { emptyTokenCounts, estimateTokens, outputTokens, totalTokens } from "./tokens.ts";
 export { countWords, mergeIntervals, splitSentences, stableHash } from "./text.ts";

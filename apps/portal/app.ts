@@ -8,6 +8,7 @@ import {
   runFullAnalysis,
   suggestModel,
   adviseOnPrompt,
+  lengthOpportunity,
   syncUsageEvent,
   type Config,
   type FullAnalysis,
@@ -56,6 +57,7 @@ let events: SyncUsageEvent[] = [];
 let stopEvents: (() => void) | null = null;
 let authMode: "signin" | "signup" = "signin";
 let latestRewrite = "";
+let latestResponse = "";
 let alias = "";
 let board: LeaderboardEntry[] = [];
 
@@ -422,6 +424,7 @@ async function analyze(): Promise<void> {
     return;
   }
 
+  latestResponse = response;
   const result = runFullAnalysis({ prompt, response, modelClass, grid, assumedCurrentTier: modelClass, surface: "paste", tool }, config);
   renderAnalysis(result);
   if (!user) return;
@@ -455,8 +458,17 @@ async function analyze(): Promise<void> {
 
 function renderAnalysis(result: FullAnalysis): void {
   const pct = Math.round(result.analysis.efficiency * 100);
-  el("result-efficiency").textContent = `${pct}%`;
-  el("result-summary").textContent = `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable. ${result.analysis.coverage.note}`;
+  const scored = result.analysis.flags.filter((flag) => flag.confidence === "high");
+  // 100% with nothing measured is not a pass mark, and should not look like one.
+  const measuredNothing = scored.length === 0 && result.analysis.coverage.lengthTargetWords === null;
+  el("result-efficiency").textContent = measuredNothing ? "—" : `${pct}%`;
+  const opportunity = lengthOpportunity(result.rewrite.original, result.event.id ? latestResponse : "");
+  el("result-summary").textContent = measuredNothing
+    ? `No waste patterns found in this reply. ${result.analysis.coverage.note}` +
+      (opportunity
+        ? ` It ran to ${opportunity.replyWords} words; asking "${opportunity.ask}" would have cut about ${opportunity.excessWords}.`
+        : "")
+    : `${result.analysis.wastedOutputTokens} of ${result.analysis.totalOutputTokens} output tokens were flagged as avoidable. ${result.analysis.coverage.note}`;
   const energy = result.estimate.wasted.energyWh;
   const water = result.estimate.wasted.waterMl;
   const co2 = result.estimate.wasted.co2g;
