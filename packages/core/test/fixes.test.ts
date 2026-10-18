@@ -253,6 +253,26 @@ test("a prompt carrying pasted text is told not to quote it back", () => {
   assert.ok(/do not quote the text above/i.test(r.added.join(" ")), r.added.join(" | "));
 });
 
+test("D4: a clause that re-asks for what was already asked is dropped", () => {
+  const r = rewritePrompt(
+    "Explain how closed loop cooling works in the real world, I want to learn about closed loop cooling.",
+  );
+  assert.ok(!/i want to learn/i.test(r.rewritten), `restatement survived: ${r.rewritten}`);
+  assert.ok(/Explain how closed loop cooling works/i.test(r.rewritten), "the real instruction must stay");
+  assert.ok(/world\./.test(r.rewritten), "the full stop must survive the dropped clause");
+  assert.ok(r.removed.some((x) => /already asked/i.test(x.why)));
+});
+
+test("a clause naming something new is kept, however it is phrased", () => {
+  // The giveaway phrasing is the same; only the subject differs. Dropping this
+  // would lose half the question, which is the failure mode worth guarding.
+  const r = rewritePrompt(
+    "Explain how closed loop cooling works, I want to learn about heat reuse in data centres.",
+  );
+  assert.ok(/heat reuse/i.test(r.rewritten), `lost a second request: ${r.rewritten}`);
+  assert.equal(r.removed.length, 0);
+});
+
 test("the rewrite never throws on any fixture prompt", () => {
   for (const f of FIXTURES) {
     const r = rewritePrompt(f.prompt);

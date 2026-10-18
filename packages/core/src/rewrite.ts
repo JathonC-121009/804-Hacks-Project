@@ -1,5 +1,5 @@
 import type { DiffOp, FlagType, Removal, RewriteResult, TaskType, WasteProfile } from "./types.ts";
-import { countWords, jaccard, normalize, splitSentences } from "./text.ts";
+import { countWords, jaccard, normalize, splitSentences, words } from "./text.ts";
 import { estimateTokens } from "./tokens.ts";
 
 /**
@@ -192,6 +192,72 @@ const PLEASANTRY_SENTENCES: RegExp[] = [
   /^no rush[!.\s]*$/i,
 ];
 
+// --- redundant clauses inside one sentence ----------------------------------
+
+/**
+ * Clauses that ask again for what the prompt has already asked for.
+ *
+ * "Explain how closed loop cooling works, I want to learn about closed loop
+ * cooling" says one thing twice, and the sentence-level duplicate check cannot
+ * see it because the repeat lives inside the same sentence and shares almost no
+ * wording with it once you count the filler verbs.
+ *
+ * The rule is deliberately narrow: the clause must BOTH open with a phrase that
+ * carries no instruction of its own, AND name nothing the prompt has not
+ * already named. A clause that introduces any new subject is kept, because at
+ * that point it is a second request rather than an echo of the first.
+ */
+const META_REQUEST =
+  /^(?:and\s+|also\s+|plus\s+)?(?:i(?:'m| am)?\s+(?:just\s+)?(?:want|wanted|would like|'d like|need|trying|looking)(?:\s+to)?\s+(?:to\s+)?(?:learn|know|understand|hear|find out)(?:\s+more)?(?:\s+about)?|(?:please\s+)?tell me(?:\s+more)?\s+about|can you tell me(?:\s+more)?\s+about)\s+/i;
+
+/** Words too common to prove that two clauses are about the same thing. */
+const STOPWORDS = new Set([
+  "the", "a", "an", "of", "in", "on", "for", "to", "and", "or", "is", "are", "it",
+  "that", "this", "how", "what", "why", "your", "my", "me", "i", "about", "more",
+  "does", "do", "with", "as", "be", "can", "you",
+]);
+
+function contentWords(text: string): string[] {
+  return words(text).filter((w) => !STOPWORDS.has(w));
+}
+
+/**
+ * Drop restating clauses from one sentence, and record every content word the
+ * sentence keeps so later sentences are measured against it too.
+ */
+function dropRedundantRequests(
+  sentence: string,
+  seen: Set<string>,
+): { text: string; dropped: string[] } {
+  const parts = sentence.split(/\s*[,;]\s+/);
+  const kept: string[] = [];
+  const dropped: string[] = [];
+
+  for (const part of parts) {
+    if (META_REQUEST.test(part)) {
+      const subject = contentWords(part.replace(META_REQUEST, ""));
+      // Every subject already named, so this clause adds nothing.
+      if (subject.length > 0 && subject.every((w) => seen.has(w))) {
+        dropped.push(part);
+        continue;
+      }
+    }
+    for (const w of contentWords(part)) seen.add(w);
+    kept.push(part);
+  }
+
+  // Nothing dropped: hand back the original rather than a rejoined copy, which
+  // would quietly turn every semicolon into a comma.
+  if (dropped.length === 0) return { text: sentence, dropped };
+
+  // The dropped clause may have carried the full stop away with it, which would
+  // run this sentence into the next one.
+  const terminator = /[.!?]+$/.exec(sentence)?.[0] ?? "";
+  let text = kept.join(", ");
+  if (terminator && !/[.!?]$/.test(text)) text += terminator;
+  return { text, dropped };
+}
+
 const DUPLICATE_JACCARD = 0.8;
 /** Floor for FUZZY matching only: short list items legitimately share wording. */
 const DUPLICATE_MIN_WORDS = 6;
@@ -278,6 +344,8 @@ export function rewritePrompt(
   const diff: DiffOp[] = [];
   const keptNorms: string[] = [];
   const keptTexts: string[] = [];
+  /** Content words the prompt has already used, for the clause check below. */
+  const seenWords = new Set<string>();
 
   for (const s of sentences) {
     // 1. Whole-sentence pleasantry.
@@ -305,6 +373,19 @@ export function rewritePrompt(
 
     if (countWords(text) === 0) {
       removed.push({ text: s.text, why: "Nothing left once the politeness was removed." });
+      diff.push({ op: "remove", text: s.text });
+      continue;
+    }
+
+    // 2b. Clauses inside this sentence that restate what has already been asked.
+    const pruned = dropRedundantRequests(text, seenWords);
+    for (const clause of pruned.dropped) {
+      removed.push({ text: clause, why: "Asks again for what you have already asked for." });
+    }
+    if (pruned.dropped.length > 0) text = tidy(pruned.text);
+
+    if (countWords(text) === 0) {
+      removed.push({ text: s.text, why: "The whole sentence repeated an earlier request." });
       diff.push({ op: "remove", text: s.text });
       continue;
     }
