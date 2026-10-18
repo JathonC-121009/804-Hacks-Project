@@ -230,8 +230,16 @@ let pendingUndo: { original: string } | null = null;
  */
 let autoSuppressed = false;
 let debounce: number | undefined;
+/** The draft we last analysed, so an unchanged one is not analysed twice. */
+let lastDraft = "";
 /** Short drafts are noise; nobody needs advice on "thanks". */
-const MIN_DRAFT_WORDS = 12;
+/**
+ * No minimum. An early version waited for 12 words and a typing pause, which
+ * meant a short prompt never got a nudge at all and a long one got it late.
+ * Analysis is local string work on a draft, so it is cheap enough to run on
+ * every change; the only guard is skipping a draft identical to the last one.
+ */
+const MIN_DRAFT_WORDS = 0;
 
 function watchComposer(): void {
   document.addEventListener(
@@ -240,9 +248,7 @@ function watchComposer(): void {
       const target = e.target as Element | null;
       if (!target || !isComposer(target)) return;
       window.clearTimeout(debounce);
-      // Wait for a pause in typing. Analysing every keystroke would make the
-      // page feel heavy, which is a bad look for an efficiency tool.
-      debounce = window.setTimeout(() => evaluateDraft(target), 400);
+      evaluateDraft(target);
     },
     true,
   );
@@ -329,12 +335,33 @@ interface NudgeData {
   suggestion: ReturnType<typeof suggestModel>;
 }
 
+/**
+ * Build an element without innerHTML.
+ *
+ * Google properties send `require-trusted-types-for 'script'`, and assigning
+ * innerHTML under that policy throws. That is why the whole overlay failed on
+ * Gemini while every selector was correct. Building nodes also means no
+ * escaping step to get wrong.
+ */
+function node(
+  tag: string,
+  className: string,
+  text?: string,
+  attrs: Record<string, string> = {},
+): HTMLElement {
+  const el = document.createElement(tag);
+  el.className = className;
+  if (text !== undefined) el.textContent = text;
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
 function showNudge(composer: Element, data: NudgeData): void {
   removeNudge();
   const box = document.createElement("div");
   box.className = "owo-nudge";
 
-  const bits: string[] = [];
+  const bits: HTMLElement[] = [];
   if (data.canRewrite) {
     // Say what the button will do. "Trim" on a prompt that only gains output
     // directions would be a lie, and the token count has to match the direction
@@ -348,15 +375,13 @@ function showNudge(composer: Element, data: NudgeData): void {
     // The tooltip names the exact directions, so the button is not a black box
     // and the user can see they change with the prompt.
     const willAdd = data.added.length > 0 ? `Adds: ${data.added.join(" ")}` : "Trims your prompt only.";
-    bits.push(
-      `<button class="owo-btn" data-owo-apply="1" title="${escapeHtml(willAdd)}">${escapeHtml(action)}</button>`,
-    );
+    bits.push(node("button", "owo-btn", action, { "data-owo-apply": "1", title: willAdd }));
   }
   if (data.advice) {
     // One line only. The composer bar is not a report, and a nudge that fills
     // the screen is a nudge people turn off.
     const short = data.advice.length > 90 ? `${data.advice.slice(0, 88)}…` : data.advice;
-    bits.push(`<span class="owo-pill" title="${escapeHtml(data.advice)}">${escapeHtml(short)}</span>`);
+    bits.push(node("span", "owo-pill", short, { title: data.advice }));
   }
   if (data.suggestion.isDowngrade) {
     // Recommend for the site in front of the user, not a generic tier.
@@ -373,22 +398,24 @@ function showNudge(composer: Element, data: NudgeData): void {
     if (mine && worthSaying) {
       const prefix = data.detectedModel ? `On ${data.detectedModel}: ` : "";
       bits.push(
-        `<span class="owo-pill" title="${escapeHtml(data.suggestion.caveats.join(" "))}">${escapeHtml(
-          `${prefix}${mine.model} at ${mine.effort} effort is likely enough`,
-        )}</span>`,
+        node("span", "owo-pill", `${prefix}${mine.model} at ${mine.effort} effort is likely enough`, {
+          title: data.suggestion.caveats.join(" "),
+        }),
       );
     }
   }
 
-  const undoBit = pendingUndo
-    ? `<button class="owo-btn owo-ghost" data-owo-undo="1" title="Puts your draft back and turns auto-add off.">Undo auto-add</button>`
-    : "";
-
-  box.innerHTML = `
-    <span class="owo-tag">before you send</span>
-    ${bits.join("")}
-    ${undoBit}
-    <button class="owo-x" data-owo-dismiss="1" title="Dismiss">&times;</button>`;
+  box.appendChild(node("span", "owo-tag", "before you send"));
+  for (const bit of bits) box.appendChild(bit);
+  if (pendingUndo) {
+    box.appendChild(
+      node("button", "owo-btn owo-ghost", "Undo auto-add", {
+        "data-owo-undo": "1",
+        title: "Puts your draft back and turns auto-add off.",
+      }),
+    );
+  }
+  box.appendChild(node("button", "owo-x", "\u00d7", { "data-owo-dismiss": "1", title: "Dismiss" }));
 
   box.querySelector("[data-owo-undo]")?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -434,11 +461,15 @@ function showAutoNote(composer: Element, added: string, original: string): void 
   removeNudge();
   const box = document.createElement("div");
   box.className = "owo-nudge";
-  box.innerHTML = `
-    <span class="owo-tag">added automatically</span>
-    <span class="owo-pill">${escapeHtml(added)}</span>
-    <button class="owo-btn" data-owo-undo="1" title="Puts your draft back and turns auto-add off.">Undo &amp; stop</button>
-    <button class="owo-x" data-owo-dismiss="1" title="Dismiss">&times;</button>`;
+  box.appendChild(node("span", "owo-tag", "added automatically"));
+  box.appendChild(node("span", "owo-pill", added));
+  box.appendChild(
+    node("button", "owo-btn", "Undo & stop", {
+      "data-owo-undo": "1",
+      title: "Puts your draft back and turns auto-add off.",
+    }),
+  );
+  box.appendChild(node("button", "owo-x", "\u00d7", { "data-owo-dismiss": "1", title: "Dismiss" }));
   box.querySelector("[data-owo-undo]")?.addEventListener("click", (e) => {
     e.preventDefault();
     pendingUndo = null;
@@ -651,25 +682,35 @@ function attachReceipt(
   const pct = Math.round(result.efficiency * 100);
   const bar = document.createElement("div");
   bar.className = `owo-receipt ${pct >= 90 ? "owo-good" : pct >= 70 ? "owo-mid" : "owo-bad"}`;
-  bar.innerHTML = `
-    <span class="owo-score">${pct}%</span>
-    <span class="owo-score-label">efficient</span>
-    <span class="owo-sep"></span>
-    <span class="owo-stat">${result.wastedOutputTokens} wasted tokens</span>
-    <span class="owo-stat">${fmt(est.wasted.energyWh.low, est.wasted.energyWh.high, "Wh")}</span>
-    ${scored.length ? `<button class="owo-link" data-owo-detail="1">${scored.length} findings</button>` : ""}
-    <span class="owo-note">estimated locally</span>`;
+  bar.appendChild(node("span", "owo-score", `${pct}%`));
+  bar.appendChild(node("span", "owo-score-label", "efficient"));
+  bar.appendChild(node("span", "owo-sep"));
+  bar.appendChild(node("span", "owo-stat", `${result.wastedOutputTokens} wasted tokens`));
+  bar.appendChild(
+    node("span", "owo-stat", fmt(est.wasted.energyWh.low, est.wasted.energyWh.high, "Wh")),
+  );
+  if (scored.length > 0) {
+    bar.appendChild(
+      node("button", "owo-link", `${scored.length} findings`, { "data-owo-detail": "1" }),
+    );
+  }
+  bar.appendChild(node("span", "owo-note", "estimated locally"));
 
   if (scored.length > 0) {
-    const detail = document.createElement("div");
-    detail.className = "owo-detail";
+    const detail = node("div", "owo-detail");
     detail.hidden = true;
-    detail.innerHTML = `
-      <ul>${scored
-        .map((f) => `<li><b>${label(f)}</b> &mdash; ${escapeHtml(f.why)}</li>`)
-        .join("")}</ul>
-      <div class="owo-fix"><b>Stop this happening again:</b>
-        <code>${escapeHtml(buildInstructionBlock(result.flags).block)}</code></div>`;
+    const list = document.createElement("ul");
+    for (const flag of scored) {
+      const item = document.createElement("li");
+      item.appendChild(node("b", "", label(flag)));
+      item.appendChild(document.createTextNode(` \u2014 ${flag.why}`));
+      list.appendChild(item);
+    }
+    detail.appendChild(list);
+    const fix = node("div", "owo-fix");
+    fix.appendChild(node("b", "", "Stop this happening again:"));
+    fix.appendChild(node("code", "", buildInstructionBlock(result.flags).block));
+    detail.appendChild(fix);
     bar.querySelector("[data-owo-detail]")?.addEventListener("click", () => {
       detail.hidden = !detail.hidden;
     });
@@ -794,8 +835,5 @@ function fmt(low: number, high: number, unit: string): string {
   return low === high ? `${s(low)} ${u}` : `${s(low)}–${s(high)} ${u}`;
 }
 
-function escapeHtml(t: string): string {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 void boot();
